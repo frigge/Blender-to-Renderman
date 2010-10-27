@@ -5283,10 +5283,6 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
             col.prop(scene.renderman_settings, "texdir", text="Texture maps")
             col.prop(scene.renderman_settings, "shadowdir", text="Shadowmaps")
             col.prop(scene.renderman_settings, "envdir", text="Envmaps")
-            col.prop(scene.renderman_settings, "defaultribpath", text="Use default RIB Path")
-            row = dir_box.row()
-            row.enabled = not rmansettings.defaultribpath
-            row.prop(scene.renderman_settings, "ribpath", text="Path to Scene RIB")
             row = dir_box.row(align=True)
             row.prop(scene.renderman_settings, "framepadding", text="Frame Padding")
             row.prop(scene.renderman_settings, "exportonly", text="Export Only")
