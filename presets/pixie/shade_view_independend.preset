@@ -1,0 +1,5 @@
+cull 1
+cull backfacing 1 1
+cull hidden 1 1
+dice 1
+dice rasterorient 1 1

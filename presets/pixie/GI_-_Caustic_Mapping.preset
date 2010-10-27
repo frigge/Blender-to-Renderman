@@ -1,0 +1,13 @@
+photon 1
+photon causticmap "causticmap.gpm" 1
+photon estimator 100 1
+photon ior 1.5 1
+photon shadingmodel "matte" 1
+trace 1
+trace bias 0.00999999977648 1
+trace displacements 0 1
+trace maxdiffusedepth 1 1
+trace maxspeculardepth 2 1
+visibility 1
+visibility photon 1 1
+visibility specular 0 1
