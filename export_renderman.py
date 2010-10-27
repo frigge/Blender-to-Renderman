@@ -3654,9 +3654,9 @@ def writeSettings(current_pass, write, scene, dir = ""):
 ### Hider
     if current_pass.hider != "":
         write('Hider "'+current_pass.hider+'"')
-    hider_parms = current_pass.hider_list[current_pass.hider].options
-    writeparms(hider_parms, write, scene)
-    write('\n')    
+        hider_parms = current_pass.hider_list[current_pass.hider].options
+        writeparms(hider_parms, write, scene)
+        write('\n')    
 
 ### Orientation    
     write('Orientation "lh"\n')
