@@ -2591,7 +2591,7 @@ def maintain_display_drivers(current_pass, scene):
                 display.filename_var = False
         else:
             display.filename += '[frame].'+extension            
-        display.file = os.path.join(imagepath, display.filename)
+        display.file = os.path.join(imagepath, display.filename).replace('\\', '\\\\')
         
         if display.quantize_presets != "other":
             quant = quant_presets[display.quantize_presets]
@@ -2690,7 +2690,7 @@ def maintain_searchpaths(current_pass, scene):
         searchpath_option = master_searchpath[name]
         searchpath_option.export = True
         searchpath_option.parametertype = "string"
-        searchpath_option.textparameter = value   
+        searchpath_option.textparameter = value.replace('\\', '\\\\')   
         maintain_options(current_pass, scene)
     
         try:
@@ -2701,10 +2701,10 @@ def maintain_searchpaths(current_pass, scene):
         slave = current_pass.option_groups["searchpath"].options[name]
         copy_parameter(slave, searchpath_option)
     
-    texpath = os.path.join(getdefaultribpath(scene), rmansettings.texdir).replace('\\', '/')        ##texture searchpath
-    shadowpath = os.path.join(getdefaultribpath(scene), rmansettings.shadowdir).replace('\\', '/')
-    envpath = os.path.join(getdefaultribpath(scene), rmansettings.envdir).replace('\\', '/')
-    maintain_searchpath('texture', texpath+':'+shadowpath+':'+envpath.replace('\\', '/'))                    
+    texpath = os.path.join(getdefaultribpath(scene), rmansettings.texdir)        ##texture searchpath
+    shadowpath = os.path.join(getdefaultribpath(scene), rmansettings.shadowdir)
+    envpath = os.path.join(getdefaultribpath(scene), rmansettings.envdir)
+    maintain_searchpath('texture', texpath+':'+shadowpath+':'+envpath)                    
 
     if rmansettings.pathcollection.shaderpaths:                             ##shader searchpath
         shader_path_value = ""
@@ -2712,7 +2712,7 @@ def maintain_searchpaths(current_pass, scene):
             shader_path_value += check_env(shader_path.name)+':'
     else:
         shader_path_value = ''                              
-    maintain_searchpath('shader', shader_path_value.replace('\\', '/')) 
+    maintain_searchpath('shader', shader_path_value) 
 
 
 def sort_collection(collection):
@@ -3414,7 +3414,7 @@ def writeparms(path, write, scene):
                 if parm.texture:
                     texture = bpy.data.textures[parm.textparameter]
                     if texture.renderman.type == 'bake':
-                        string = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '/')
+                        string = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '\\\\')
                 else:
                     string = parm.textparameter
                 write('"string '+name + '" ["' + string + '"]')
@@ -3452,12 +3452,12 @@ def writeshaderparameter(parameterlist, write, scene):
                             image.save()
                         if texture.renderman.process:
                             prepare_texture(texture.image.filepath, "", scene)
-                            tx = prepared_texture_file(texture.image.filepath, scene).replace('\\', '/')
+                            tx = prepared_texture_file(texture.image.filepath, scene).replace('\\', '\\\\')
                     elif texture.renderman.type =="envmap":
                         file = scene.renderman_settings.passes[texture.renderman.envpass].displaydrivers[0].file
                         tx = file.replace("[dir]", "").replace("[frame]", framepadding(scene))
                     elif texture.renderman.type == "bake":
-                        tx = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '/')
+                        tx = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '\\\\')
                     write('"'+parm.name+'"'+' ["'+tx+'"] ')
                             
                 else:
@@ -3649,7 +3649,8 @@ def writeSettings(current_pass, write, scene, dir = ""):
 
 ### Options
     write_attrs_or_opts(current_pass.option_groups, write, "Option", "", scene)
-
+    write('\n')
+    
 ### Hider
     if current_pass.hider != "":
         write('Hider "'+current_pass.hider+'"')
@@ -4024,7 +4025,7 @@ def writeMaterial(mat, path, current_pass, scene):
         writeshader(displacement_shader, displacement_parameter, "Displacement", write, scene)
         writeshader(interior_shader, interior_parameter, "Interior", write, scene)
         writeshader(exterior_shader, exterior_parameter, "Exterior", write, scene)           
-    return 'ReadArchive "'+matfilepath+'"\n'.replace('\\', '/')
+    return 'ReadArchive "'+matfilepath+'"\n'
 
 
 #############################################
@@ -4038,55 +4039,56 @@ def writeParticles(path, obj, current_pass, write, scene):
     rmansettings = scene.renderman_settings
     pfiles = []
     
-    for psystem in obj.particle_systems:
-        if psystem.settings.type == 'EMITTER':
-            filename = obj.name+'_'+psystem.name+framepadding(scene)+'.rib'
-            particle_dir = os.path.join(getdefaultribpath(scene), rmansettings.particledir)
-            
-            if not os.path.exists(particle_dir): os.mkdir(particle_dir)
-            
-            path = os.path.join(particle_dir, filename)
-            pfiles.append(path)
-            
-            file = open(path, "w")
-            pwrite = file.write
-            
-            pwrite('Points\n')
-            
-            pwrite('"P" [')
-            for part in psystem.particles:
-                rotation = part.rotation.to_euler()
-                rotx = str(math.degrees(rotation[0]))
-                roty = str(math.degrees(rotation[1]))
-                rotz = str(math.degrees(rotation[2]))
-                locx = str(part.location.x)
-                locy = str(part.location.y)
-                locz = str(part.location.z)
+    if len(obj.particle_systems) > 0:
+        for psystem in obj.particle_systems:
+            if psystem.settings.type == 'EMITTER':
+                filename = obj.name+'_'+psystem.name+framepadding(scene)+'.rib'
+                particle_dir = os.path.join(getdefaultribpath(scene), rmansettings.particledir)
                 
-                pwrite(locx+' '+locy+' '+locz+' ')
-            pwrite(']\n')
-            
-            pwrite('"width" [')
-            for part in psystem.particles:
-                size = str(part.size)
+                if not os.path.exists(particle_dir): os.mkdir(particle_dir)
                 
-                pwrite(size+' ')
-            pwrite(']\n')
-            
-    write("\nAttributeBegin\n")
-    write('Attribute "identifier" "name" ["'+obj.name+'_particles"]\n')
-    write_attrs_or_opts(obj.renderman[current_pass.name].attribute_groups, write, "Attribute", "", scene)
-
-    if not current_pass.shadow:
-        for item in obj.renderman[current_pass.name].light_list:
-            if not item.illuminate:
-                write('Illuminate "'+item.lightname+'"')
-                write(' 0\n')
+                path = os.path.join(particle_dir, filename)
+                pfiles.append(path)
                 
-    for p in pfiles:
-        write('ReadArchive "'+p.replace('\\', '/')+'"\n')
-        
-    write('AttributeEnd\n')
+                file = open(path, "w")
+                pwrite = file.write
+                
+                pwrite('Points\n')
+                
+                pwrite('"P" [')
+                for part in psystem.particles:
+                    rotation = part.rotation.to_euler()
+                    rotx = str(math.degrees(rotation[0]))
+                    roty = str(math.degrees(rotation[1]))
+                    rotz = str(math.degrees(rotation[2]))
+                    locx = str(part.location.x)
+                    locy = str(part.location.y)
+                    locz = str(part.location.z)
+                    
+                    pwrite(locx+' '+locy+' '+locz+' ')
+                pwrite(']\n')
+                
+                pwrite('"width" [')
+                for part in psystem.particles:
+                    size = str(part.size)
+                    
+                    pwrite(size+' ')
+                pwrite(']\n')
+                
+        write("\nAttributeBegin\n")
+        write('Attribute "identifier" "name" ["'+obj.name+'_particles"]\n')
+        write_attrs_or_opts(obj.renderman[current_pass.name].attribute_groups, write, "Attribute", "", scene)
+    
+        if not current_pass.shadow:
+            for item in obj.renderman[current_pass.name].light_list:
+                if not item.illuminate:
+                    write('Illuminate "'+item.lightname+'"')
+                    write(' 0\n')
+                    
+        for p in pfiles:
+            write('ReadArchive "'+p.replace('\\', '\\\\')+'"\n')
+            
+        write('AttributeEnd\n')
 
 #############################################
 #                                           #
@@ -4115,7 +4117,7 @@ def writeObject(path, obj, current_pass, write, scene):
             objtransform(obj, write, current_pass, scene)
             rmansettings = scene.renderman_settings
     
-            if mat: write(writeMaterial(mat, path, current_pass, scene))
+            if mat: write(writeMaterial(mat, path, current_pass, scene).replace('\\', '\\\\'))
             
             if obj.children:
                 for child in obj.children:
@@ -4288,9 +4290,9 @@ def export_object(obj, current_pass, path, write, scene, type = "ReadArchive"):
                 scene.frame_set(current_frame - (shutterspeed - s))
                 fullath = writeMesh(obj, path, scene)
                 if type in ['ObjectInstance', 'ReadArchive']:
-                    write('ReadArchive "'+fullpath.replace('\\', '/')+'"\n')
+                    write('ReadArchive "'+fullpath.replace('\\', '\\\\')+'"\n')
                 else:             
-                    write('DelayedReadArchive "'+fullpath.replace('\\', '/')+'" [')
+                    write('DelayedReadArchive "'+fullpath.replace('\\', '\\\\')+'" [')
                     for bound in obj.bound_box:
                         write([" ".join(str(b)) for b in bound]) 
                         write(" ")
@@ -4300,9 +4302,9 @@ def export_object(obj, current_pass, path, write, scene, type = "ReadArchive"):
     else:
         fullpath = writeMesh(obj, path, scene)               
         if type in ['ObjectInstance', 'ReadArchive']:
-            write('ReadArchive "'+fullpath.replace('\\', '/')+'"\n')
+            write('ReadArchive "'+fullpath.replace('\\', '\\\\')+'"\n')
         else:             
-            write('DelayedReadArchive "'+fullpath.replace('\\', '/')+'" [')
+            write('DelayedReadArchive "'+fullpath.replace('\\', '\\\\')+'" [')
             for bound in obj.bound_box:
                 for b in bound:
                     write(str(b)+' ')
