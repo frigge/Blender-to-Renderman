@@ -62,7 +62,7 @@ import properties_data_lamp
 import properties_texture
 import properties_particle
 
-properties_render.RENDER_PT_render.COMPAT_ENGINES.add('RENDERMAN')
+#properties_render.RENDER_PT_render.COMPAT_ENGINES.add('RENDERMAN')
 properties_render.RENDER_PT_dimensions.COMPAT_ENGINES.add('RENDERMAN')
 #properties_render.RENDER_PT_output.COMPAT_ENGINES.add('RENDERMAN')
 #properties_render.RENDER_PT_post_processing.COMPAT_ENGINES.add('RENDERMAN')
@@ -91,11 +91,11 @@ for member in dir(properties_particle):
     subclass = getattr(properties_particle, member)
     exceptions = ['Render']
     try:
-        subclass.COMPAT_ENGINES.add('RENDERMAN')
+        if not subclass.bl_label in exceptions:
+            subclass.COMPAT_ENGINES.add('RENDERMAN')
     except:
         pass
             
-del properties_particle
 del properties_texture
 del properties_data_mesh
 del properties_data_camera
@@ -4316,7 +4316,7 @@ def export_object(obj, current_pass, path, write, scene, type = "ReadArchive"):
 
             
 
-def export(current_pass, path, rhandle, scene):
+def export(current_pass, path, scene):
     degrees = math.degrees
     if current_pass.environment:
         camera = scene.objects[current_pass.camera_object]
@@ -4335,7 +4335,7 @@ def export(current_pass, path, rhandle, scene):
             
         if not current_pass.shadow:
             fov = "90"
-            process_envmap(current_pass, fov, rhandle, scene)
+            process_envmap(current_pass, fov, scene)
             
     else:
         if current_pass.shadow:
@@ -4371,7 +4371,7 @@ def invoke_renderer(rib, scene):
     rndr = scene.renderman_settings.renderexec
     os.system('"'+rndr+'" "'+ rib+'"')
 
-def process_envmap(current_pass, fov, rhandle, scene):
+def process_envmap(current_pass, fov, scene):
     envdirections = ["_px", "_nx", "_py", "_ny", "_pz", "_nz"]
     envfile = current_pass.displaydrivers[0].file
     textool = scene.renderman_settings.textureexec
@@ -4470,15 +4470,15 @@ class Renderman_OT_Render(bpy.types.Operator):
         checkpaths(os.path.join(path, scene.renderman_settings.texdir))
         if self.anim:
             for i in range(scene.frame_start, scene.frame_end+scene.frame_step, scene.frame_step):
-                scene.frame_current = i
-                render()
+                scene.frame_set(i)
+                render(scene)
         else:
-            render()
+            render(scene)
         return{'FINISHED'}
 
-def image(name): return name.replace("[frame]", framepadding())
+def image(name, scene): return name.replace("[frame]", framepadding(scene))
 
-def start_render(render, ribfile, current_pass, rhandle, scene):
+def start_render(render, ribfile, current_pass, scene):
     r = scene.render
     x = int(r.resolution_x * r.resolution_percentage * 0.01)
     y = int(r.resolution_y * r.resolution_percentage * 0.01)
@@ -4505,7 +4505,7 @@ def start_render(render, ribfile, current_pass, rhandle, scene):
     #wait for the file to be completely written
     for disp in current_pass.displaydrivers:
         if not disp.displaydriver == "framebuffer":
-            img = image(disp.file)
+            img = image(disp.file, scene)
             while not os.path.exists(img): ###wait for the file to be created
                 pass            
             checksize(img)
@@ -4514,12 +4514,12 @@ def start_render(render, ribfile, current_pass, rhandle, scene):
     ## until the render api is fixed, load all images manually in the image editor
     for disp in current_pass.displaydrivers:
         if not disp.displaydriver == "framebuffer" or current_pass.shadow or current_pass.environment:
-            img = image(disp.file)
+            img = image(disp.file, scene)
             if not img in bpy.data.images and not disp.displaydriver == "framebuffer":
                 bpy.data.images.load(img)
             else: bpy.data.images[img].update()    
        
-def render(rhandle, scene):
+def render(scene):
     rndr = scene.renderman_settings.renderexec
     if rndr != "":
         maintain(scene)
@@ -4546,24 +4546,24 @@ def render(rhandle, scene):
 
                 exported_children = exported_instances = []
 
-                export(item, path, rhandle, scene)
+                export(item, path, scene)
 
                 if not scene.renderman_settings.exportonly:
                     if rndr != "" and not item.environment:                            
-                        start_render(rndr, rib, item, rhandle, scene)                    
+                        start_render(rndr, rib, item, scene)                    
         else:
 
             exported_children = exported_instances = []
 
 
-            export(active_pass, path, rhandle, scene)
+            export(active_pass, path, scene)
             imagefolder = os.path.join(path, active_pass.imagedir)
             checkpaths(imagefolder)
             ribfilename = active_pass.name+framepadding(scene)+".rib"
             rib = os.path.join(path, ribfilename)
             if not scene.renderman_settings.exportonly:
                if rndr != "":
-                   start_render(rndr, rib, active_pass, rhandle, scene)       
+                   start_render(rndr, rib, active_pass, scene)       
        
        
 class RendermanRender(bpy.types.RenderEngine):
@@ -5086,17 +5086,17 @@ class RenderButtonsPanel():
         rd = context.scene.render
         return (context.scene and rd.use_game_engine is False) and (rd.engine in cls.COMPAT_ENGINES)
     
-#class Renderman_PT_Render(RenderButtonsPanel, bpy.types.Panel):
-#    bl_label = "Render"
-#    
-#    COMPAT_ENGINES = {'RENDERMAN'}
-#    
-#    def draw(self, context):
-#        layout = self.layout
-#        row = layout.row()    
-#        row.operator("renderman.render", text="Image", icon="RENDER_STILL")
-#        row.operator("renderman.render", text="Animation", icon="RENDER_ANIMATION").anim = True
-#
+class Renderman_PT_Render(RenderButtonsPanel, bpy.types.Panel):
+    bl_label = "Render"
+    
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()    
+        row.operator("renderman.render", text="Image", icon="RENDER_STILL")
+        row.operator("renderman.render", text="Animation", icon="RENDER_ANIMATION").anim = True
+
 class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Settings"
     bl_idname = "RenderSettingsPanel"
@@ -6438,6 +6438,30 @@ class Renderman_PT_CameraLens(CameraDataButtonsPanel, bpy.types.Panel):
         row.enabled = perspective_blur or transformation_blur
         row.prop(camera.renderman[getactivepass(scene).name], "motion_samples")
 
+
+##################################################################################################################################
+
+#########################################################################################################
+#                                                                                                       #
+#      Particle Panels                                                                                  #
+#                                                                                                       #
+#########################################################################################################
+
+class ParticleButtonsPanel():
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "particle"
+    
+    @classmethod
+    def poll(cls, context):
+        return properties_particle.particle_panel_poll(cls, context)
+    
+    
+class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel):
+    bl_label = "Render"
+    
+    def draw(self, context):
+        layout = self.layout
 
 ##################################################################################################################################
 
