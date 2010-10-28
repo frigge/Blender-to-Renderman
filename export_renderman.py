@@ -4095,10 +4095,19 @@ def writeParticles(path, obj, current_pass, write, scene):
 #   Objects                                 #
 #                                           #
 #############################################
-
     
 def writeObject(path, obj, current_pass, write, scene):
-    if obj.type == 'MESH':
+    def writeChildren():
+        for child in obj.children:
+            if child.name not in exported_children:
+                writeObject(path, child, current_pass, write, scene)
+                exported_children.append(child.name)
+                
+    if obj.type == 'EMPTY':
+        if obj.children:
+            writeChildren()
+            
+    elif obj.type in ['MESH']:
         if check_visible(obj, scene):                
             print("write "+obj.name)
     
@@ -4120,10 +4129,7 @@ def writeObject(path, obj, current_pass, write, scene):
             if mat: write(writeMaterial(mat, path, current_pass, scene).replace('\\', '\\\\'))
             
             if obj.children:
-                for child in obj.children:
-                    if child.name not in exported_children:
-                        writeObject(scene, path, child, current_pass, write)
-                        exported_children.append(child.name)
+                writeChildren()
             
             if obj.data.show_double_sided:
                 write('Sides 2\n')
@@ -4475,6 +4481,9 @@ class Renderman_OT_Render(bpy.types.Operator):
         else:
             render(scene)
         return{'FINISHED'}
+
+
+bpy.data.window_manager[0].keyconfigs.active.keymaps['Screen'].items['render.render']    
 
 def image(name, scene): return name.replace("[frame]", framepadding(scene))
 
