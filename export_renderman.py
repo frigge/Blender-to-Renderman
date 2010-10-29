@@ -102,7 +102,6 @@ del properties_data_camera
 del properties_data_lamp
 
 exported_instances = []
-exported_children = []
 assigned_shaders = {}
 objects_size = -1
 light_list = []
@@ -166,6 +165,8 @@ class EmptyCollections(bpy.types.IDPropertyGroup):
 class Mappings(bpy.types.IDPropertyGroup):
     pass
 
+class ParticlePasses(bpy.types.IDPropertyGroup):
+    pass
 
 
 #########################################################################################################
@@ -1055,7 +1056,47 @@ Shader.atmosphere_parameter_index = Int(name="Volume Shader Parameter Index",
                     min=-1,
                     max=1000)
                     
-                                        
+                    
+#############################################
+#                                           #
+#   Particle Properties                     #
+#                                           #
+############################################# 
+
+psettings = bpy.types.ParticleSettings
+
+psettings.renderman = CollectionProp(type = ParticlePasses)
+
+ParticlePasses.attribute_groups = CollectionProp(type=AttributeOptionGroup)
+
+ParticlePasses.shaders = Pointer(type= Shader)
+
+ParticlePasses.surface_expand = Bool(name="Expand", description="Expand Shader", default=False)
+
+ParticlePasses.disp_expand = Bool(name="Expand", description="Expand Shader", default=False)
+
+ParticlePasses.interior_expand = Bool(name="Expand", description="Expand Shader", default=False)
+
+ParticlePasses.exterior_expand = Bool(name="Expand", description="Expand Shader", default=False)
+
+ParticlePasses.arealight_expand = Bool(name="Expand", description="Expand Shader", default=False)
+
+ParticlePasses.render_geometry = Enum(  name = "Render Geometry", 
+                                        description="Geometry to use for rendering", 
+                                        default="Points",
+                                        items = (   ("Points", "Points", "Points"),
+                                                    ("Object", "Object", "Object"),
+                                                    ("ReadArchive", "ReadArchive", "ReadArchive"),
+                                                    ("DelayedReadArchive", "DelayedReadArchive", "DelayedReadArchive"),
+                                                    ("Sphere", "Sphere", "Sphere"),
+                                                    ("Cone", "Cone", "Cone"),
+                                                    ("Cylinder", "Cylinder", "Cylinder"),
+                                                    ("Hyperboloid", "Hyperboloid", "Hyperboloid"),
+                                                    ("Paraboloid", "Paraboloid", "Paraboloid"),
+                                                    ("Disk", "Disk", "Disk"),
+                                                    ("Torus", "Torus", "Torus")))
+                                                    
+                                  
 ##################################################################################################################################
 #                                                                                                                                #
 #       Render Engine Preset Class                                                                                               #
@@ -2564,7 +2605,18 @@ def maintain_material_passes(material, scene):
         
     for i, rpass in enumerate(material.renderman):
         if not rpass.name in scene.renderman_settings.passes:
-            material.renderman.remove(i)                     
+            material.renderman.remove(i)
+            
+def maintain_particle_passes(obj, scene):
+    if obj.particle_systems:
+        for psystem in obj.particle_systems:
+            for rpass in scene.renderman_settings.passes:
+                if not rpass.name in psystem.settings.renderman:
+                    psystem.settings.renderman.add().name = rpass.name
+                
+            for i, rpass in enumerate(psystem.settings.renderman):
+                if not rpass.name in scene.renderman_settings.passes:
+                    psystem.settings.renderman.remove(i)                                 
             
 def maintain_display_drivers(current_pass, scene):
     path = getdefaultribpath(scene)
@@ -2873,6 +2925,15 @@ def maintain_object_attributes(obj, scene):             ###maintain attributes f
         slave_groups = r.attribute_groups
         maintain_parameters(master_groups, slave_groups, scene, options=False, obj=True)                                                  
 
+def maintain_particle_attributes(obj, scene):             ###maintain attributes for every object
+    rmansettings = scene.renderman_settings
+    master_groups = rmansettings.attribute_groups
+    if obj.particle_systems:
+        for psystem in obj.particle_systems:
+            for r in psystem.settings.renderman:
+                slave_groups = r.attribute_groups
+                maintain_parameters(master_groups, slave_groups, scene, options=False, obj=True)     
+
 def checkForEnvMap(obj, scene):
     env = False
     texture = None
@@ -3092,6 +3153,7 @@ def maintain_light(light, scene):
 def maintain_passes(obj, scene):
     if obj.type == "LAMP": maintain_light_passes(obj, scene)
     maintain_object_passes(obj, scene)
+    maintain_particle_passes(obj, scene)
 
 def maintain_lists(scene):
     global light_list, objects_size
@@ -3136,7 +3198,8 @@ def maintain(scene):
     
     for obj in scene.objects:
         maintain_passes(obj, scene)
-        maintain_object_attributes(obj, scene)            
+        maintain_object_attributes(obj, scene)
+        maintain_particle_attributes(obj, scene)        
         if obj.type == 'LAMP':
             maintain_shadowmap_passes(obj, scene)
             maintain_light(obj, scene)       
@@ -3401,11 +3464,12 @@ def write_attrs_or_opts(groups, write, attr_opt, tab, scene):
     for group in groups:
         grp = {"Option" : group.options, "Attribute" : group.attributes}        
         if group.export:
-            write(tab + attr_opt + ' "'+group.name+'" ')
+            write(tab + attr_opt + ' \n\t"'+group.name+'" ')
             writeparms(grp[attr_opt], write, scene)                                          
 
 def writeparms(path, write, scene):                                
     for parm in path:
+        write('\n\t\t')
         name = parm.name
         if name.find('[') != -1:
             name = name[:name.find('[')]
@@ -3440,7 +3504,8 @@ def writeparms(path, write, scene):
             write(' ')
 
 def writeshaderparameter(parameterlist, write, scene):
-        for parm in parameterlist:
+        for i, parm in enumerate(parameterlist):
+            write('\n\t')
             if parm.parametertype == 'string':
                 if parm.texture:
                     if parm.texture != "" and parm.textparameter in bpy.data.textures:
@@ -3684,10 +3749,11 @@ def round(float):
 
 def objtransform(obj, write, current_pass, scene):
     def writetransform(matrix):
-        write('ConcatTransform [')    
-        for row in matrix:
+        write('ConcatTransform [\t')    
+        for i, row in enumerate(matrix):
             for val in row:
                 write(" " + str(val))
+            if not i == len(matrix)-1: write('\n\t\t\t\t\t')
         write(']\n')
     
     ## transformation blur    
@@ -3829,11 +3895,7 @@ def writeCamera(current_pass, cam, camrot, write, scene):
 #############################################
 
 
-def writeWorld(current_pass, write, path, scene):
-    global exported_children
-    if current_pass.environment:
-        exported_children.append(current_pass.camera_object)
-    
+def writeWorld(current_pass, write, path, scene):    
     global_shader = current_pass.global_shader
     write("WorldBegin\n")
     write_attrs_or_opts(current_pass.attribute_groups, write, "Attribute", "", scene)
@@ -3876,10 +3938,9 @@ def writeWorld(current_pass, write, path, scene):
 
     if objects:
         for obj in objects:
-            if obj.name not in exported_children and not obj.hide_render:
+            if not obj.hide_render and not obj.name == current_pass.camera_object:
                 writeObject(path, obj, current_pass, write, scene)
-                writeParticles(path, obj, current_pass, write, scene)
-                exported_children.append(obj.name)                  
+                writeParticles(path, obj, current_pass, write, scene)                 
     write("WorldEnd\n")
 
 
@@ -4097,23 +4158,16 @@ def writeParticles(path, obj, current_pass, write, scene):
 #############################################
     
 def writeObject(path, obj, current_pass, write, scene):
-    def writeChildren():
-        for child in obj.children:
-            if child.name not in exported_children:
-                writeObject(path, child, current_pass, write, scene)
-                exported_children.append(child.name)
-                
-    if obj.type == 'EMPTY':
-        if obj.children:
-            writeChildren()
-            
-    elif obj.type in ['MESH']:
+    if obj.type in ['MESH']:
         if check_visible(obj, scene):                
             print("write "+obj.name)
     
             mat = obj.active_material            
-    
-            write("\nAttributeBegin\n")
+            
+            write("##"+obj.name+'\n')
+            if obj.parent:
+                write('#child of '+obj.parent.name+'\n')
+            write("AttributeBegin\n")
             write('Attribute "identifier" "name" ["'+obj.name+'"]\n')
             write_attrs_or_opts(obj.renderman[current_pass.name].attribute_groups, write, "Attribute", "", scene)
     
@@ -4128,9 +4182,6 @@ def writeObject(path, obj, current_pass, write, scene):
     
             if mat: write(writeMaterial(mat, path, current_pass, scene).replace('\\', '\\\\'))
             
-            if obj.children:
-                writeChildren()
-            
             if obj.data.show_double_sided:
                 write('Sides 2\n')
                 
@@ -4142,7 +4193,7 @@ def writeObject(path, obj, current_pass, write, scene):
                 write('ObjectInstance "'+obj.data.name+'"\n')
             else:
                 export_object(obj, current_pass, meshpath, write, scene, export_type)
-            write("AttributeEnd\n")
+            write("AttributeEnd\n\n")
             print("Done")
 
 
@@ -4480,10 +4531,7 @@ class Renderman_OT_Render(bpy.types.Operator):
                 render(scene)
         else:
             render(scene)
-        return{'FINISHED'}
-
-
-bpy.data.window_manager[0].keyconfigs.active.keymaps['Screen'].items['render.render']    
+        return{'FINISHED'}   
 
 def image(name, scene): return name.replace("[frame]", framepadding(scene))
 
@@ -4827,8 +4875,8 @@ def parmlayout(parm, master_parm, layout):
 def matparmlayout(parmlist, layout, material):
     if parmlist:
         for active_parameter in parmlist:
+            row = layout.row(align=True)
             if active_parameter.parametertype == 'string':
-                row = layout.row(align=True)
                 
                 if active_parameter.texture:
                     if material == bpy.data:
@@ -4840,11 +4888,11 @@ def matparmlayout(parmlist, layout, material):
                 row.prop(active_parameter, "texture", text="", icon='TEXTURE')
             if active_parameter.parametertype == 'float':
                 if active_parameter.vector_size == 1:
-                    layout.prop(active_parameter, "float_one", text=active_parameter.name)
+                    row.prop(active_parameter, "float_one", text=active_parameter.name)
                 elif active_parameter.vector_size == 3:
-                    layout.prop(active_parameter, "float_three", text=active_parameter.name)                    
+                    row.prop(active_parameter, "float_three", text=active_parameter.name)                    
             if active_parameter.parametertype == 'color':
-                layout.prop(active_parameter, "colorparameter", text=active_parameter.name)             
+                row.prop(active_parameter, "colorparameter", text=active_parameter.name)             
     
 def checkderived(active_parameter, layout, settings):
     for setting in settings:
@@ -6464,14 +6512,194 @@ class ParticleButtonsPanel():
     @classmethod
     def poll(cls, context):
         return properties_particle.particle_panel_poll(cls, context)
+
+
+class Particles_PT_RendermanPassesPanel(ParticleButtonsPanel, bpy.types.Panel):
+    bl_label="Passes"    
     
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        scene = context.scene
+        renderman_settings = scene.renderman_settings
+        layout = self.layout
+        row = layout.row()
+        col = row.column(align=True)
+
+        active_pass = getactivepass(scene)
+
+        if len(renderman_settings.passes) < 15:
+            rows = len(renderman_settings.passes)+1
+        else:
+            rows = 15
+    
+        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
+        sub_row=col.row(align=True)    
+        sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
+
+        if renderman_settings.passes:
+            if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
+                renderman_settings.passesindex = 0
+            elif renderman_settings.searchpass:
+                for i, passes in enumerate(renderman_settings.passes):
+                    if passes.name == renderman_settings.searchpass:
+                        renderman_settings.passesindex = i
+                        renderman_settings.searchpass = "" 
+                        
     
 class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel):
     bl_label = "Render"
     
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
     def draw(self, context):
+        scene = context.scene
+        active_pass = getactivepass(scene)
         layout = self.layout
+        pathcollection = context.scene.renderman_settings.pathcollection
+        
+        psystem = context.particle_system
+        rman = psystem.settings.renderman[getactivepass(scene).name]
+        obj = context.object
 
+        row = layout.row()
+        col = row.column(align=True)
+        
+        ##  surface shader
+        surf_header_box = col.box()
+        row = surf_header_box.row(align=True)
+        row.prop(rman, "surface_expand", text="", icon="TRIA_DOWN" if rman.surface_expand else "TRIA_RIGHT", emboss=False)
+        row.label("Surface Shader", icon="MATERIAL")
+        if rman.surface_expand:
+            surf_box = col.box()
+            row = surf_box.row(align = True)
+            row.prop_search(rman.shaders, "surface_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            
+            surf_box.label(text=shader_info(rman.shaders.surface_shader, rman.shaders.surface_shader_parameter, scene))
+            checkshaderparameter(obj.name+psystem.name+"surf", active_pass, rman.shaders.surface_shader, rman.shaders.surface_shader_parameter, scene)
+
+            matparmlayout(rman.shaders.surface_shader_parameter, surf_box, bpy.data)
+        
+        row = layout.row()    
+        col = row.column(align=True)
+                    
+        ##  displacement shader
+        disp_header_box = col.box()
+        row = disp_header_box.row(align=True)
+        row.prop(rman, "disp_expand", text="", icon="TRIA_DOWN" if rman.disp_expand else "TRIA_RIGHT", emboss=False)
+        row.label("Displacement Shader", icon="MATERIAL")
+        if rman.disp_expand:
+            disp_box = col.box()
+            row = disp_box.row(align = True)
+            row.prop_search(rman.shaders, "displacement_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            
+            disp_box.label(text=shader_info(rman.shaders.displacement_shader, rman.shaders.disp_shader_parameter, scene))
+            checkshaderparameter(obj.name+psystem.name+"disp", active_pass, rman.shaders.displacement_shader, rman.shaders.disp_shader_parameter, scene)
+
+            matparmlayout(rman.shaders.disp_shader_parameter, disp_box, bpy.data)
+        
+        row = layout.row()    
+        col = row.column(align=True)
+        
+        ##  interior shader
+        int_header_box = col.box()
+        row = int_header_box.row(align=True)
+        row.prop(rman, "interior_expand", text="", icon="TRIA_DOWN" if rman.interior_expand else "TRIA_RIGHT", emboss=False)
+        row.label("Interior Shader", icon="MATERIAL")
+        if rman.interior_expand:
+            int_box = col.box()
+            row = int_box.row(align = True)
+            row.prop_search(rman.shaders, "interior_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            
+            int_box.label(text=shader_info(rman.shaders.interior_shader, rman.shaders.interior_shader_parameter, scene))
+            checkshaderparameter(obj.name+psystem.name+"int", active_pass, rman.shaders.interior_shader, rman.shaders.interior_shader_parameter, scene)
+
+            matparmlayout(rman.shaders.interior_shader_parameter, int_box, bpy.data)
+            
+        geometry_box = layout.box()
+        row = geometry_box.row()
+        row.prop(rman, "render_geometry")
+        
+        row = layout.row()    
+        col = row.column(align=True)
+        ##  exterior shader
+        ext_header_box = col.box()
+        row = ext_header_box.row(align=True)
+        row.prop(rman, "exterior_expand", text="", icon="TRIA_DOWN" if rman.exterior_expand else "TRIA_RIGHT", emboss=False)
+        row.label("Exterior Shader", icon="MATERIAL")
+        if rman.exterior_expand:
+            ext_box = col.box()
+            row = ext_box.row(align = True)
+            row.prop_search(rman.shaders, "exterior_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            
+            ext_box.label(text=shader_info(rman.shaders.exterior_shader, rman.shaders.exterior_shader_parameter, scene))
+            checkshaderparameter(obj.name+psystem.name+"ext", active_pass, rman.shaders.exterior_shader, rman.shaders.exterior_shader_parameter, scene)
+
+            matparmlayout(rman.shaders.exterior_shader_parameter, ext_box, bpy.data)
+        
+        row = layout.row()
+        col = row.column(align=True)    
+        ##  arealight shader
+        area_header_box = col.box()
+        row = area_header_box.row(align=True)
+        row.prop(rman, "arealight_expand", text="", icon="TRIA_DOWN" if rman.arealight_expand else "TRIA_RIGHT", emboss=False)
+        row.label("Arealight Shader", icon="MATERIAL")
+        if rman.arealight_expand:
+            area_box = col.box()
+            row = area_box.row(align = True)
+            row.prop_search(rman.shaders, "arealight_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            
+            area_box.label(text=shader_info(rman.shaders.arealight_shader, rman.shaders.light_shader_parameter, scene))
+            checkshaderparameter(obj.name+psystem.name+"area", active_pass, rman.shaders.arealight_shader, rman.shaders.light_shader_parameter, scene)
+
+            matparmlayout(rman.shaders.light_shader_parameter, area_box, bpy.data)  
+            
+            
+class Particle_PT_AttributePanel(ParticleButtonsPanel, bpy.types.Panel):
+    bl_label = "Renderman Attributes"
+    bl_default_closed = True
+
+    COMPAT_ENGINES = {'RENDERMAN'}
+
+    def draw(self, context):
+        scene = context.scene
+        maintain(scene)
+        object = context.object
+        psystem = context.particle_system
+        renderman_settings = psystem.settings.renderman[getactivepass(scene).name]
+        layout = self.layout
+        row = layout.row(align = True)
+        row.operator("attributes.object_set_as_default", text="set as default", icon="FILE_TICK")
+        row.operator("attributes.object_get_default", text="get default", icon="ANIM")
+        row = layout.row(align = True)
+        row.menu("Renderman_MT_objattributepresets", text="Presets") 
+        row.operator("attribute.add_preset", text="", icon="ZOOMIN").obj = "object.name"        
+        for group in renderman_settings.attribute_groups:
+            box = layout.box()
+            row = box.row(align=True)
+            row.prop(group, "expand", text="", icon="TRIA_RIGHT" if not group.expand else "TRIA_DOWN", emboss = False)
+            row.label(text=group.name)
+            row.prop(group, "export", text="")
+            box.active = group.export
+            row.operator("attribute_group.obj_get_default", text="", icon="ANIM").grp = group.name
+            row.operator("attribute_group.obj_set_default", text="", icon="FILE_TICK").grp = group.name         
+            if group.expand:
+                for attribute in group.attributes:
+                    master_attribute = context.scene.renderman_settings.attribute_groups[group.name].attributes[attribute.name]
+                    row = box.row(align=True)
+                    row.active = attribute.export
+                    row.label(text=master_attribute.name)
+                    parmlayout(attribute, master_attribute, row)
+                    row.prop(attribute, "export", text="")
+                    row.operator("attribute.obj_get_default", text="", icon="ANIM").grp_opt = group.name + ' ' + attribute.name
+                    row.operator("attribute.obj_set_default", text="", icon="FILE_TICK").grp_opt = group.name + ' ' + attribute.name                  
+                                                          
+    
 ##################################################################################################################################
 
 #########################################################################################################
