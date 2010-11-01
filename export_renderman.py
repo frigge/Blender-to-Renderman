@@ -266,6 +266,8 @@ Collection.collection = CollectionProp(type = Collection)
 
 Collection.free = Bool(default = False)
 
+Collection.type = String()
+
 #############################################
 #                                           #
 #   Render Properties                       #
@@ -3237,7 +3239,7 @@ def maintain(scene):
         maintain_options(rpass, scene)
         maintain_hiders(rpass, scene)
         maintain_world_attributes(rpass, scene)
-        create_render_layers(rpass, scene)
+ #       create_render_layers(rpass, scene)
         maintain_searchpaths(rpass, scene) 
         i = clear_envmap_passes(i, scene)  
     
@@ -3333,8 +3335,12 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
             
     def addparameter(parameter, shader_parameter, value):
         parmname = parameter[0]
+        if len(parameter) > 3:
+            parameter.pop(1)
+        type = parameter[1] + " " + parameter[2]
         shader_parameter.add().name = parmname
         ap = shader_parameter[parmname]
+        ap.type = type
         if "color" in parameter:
             ap.parametertype = "color"
             value = value.split()
@@ -3550,7 +3556,7 @@ def writeparms(path, write, scene):
 
 def writeshaderparameter(parameterlist, write, scene):
         for i, parm in enumerate(parameterlist):
-            write('\n\t')
+            write('\n\t"'+parm.type+' '+parm.name+'"')
             if parm.parametertype == 'string':
                 if parm.texture:
                     if parm.texture != "" and parm.textparameter in bpy.data.textures:
@@ -3568,22 +3574,22 @@ def writeshaderparameter(parameterlist, write, scene):
                         tx = file.replace("[dir]", "").replace("[frame]", framepadding(scene))
                     elif texture.renderman.type == "bake":
                         tx = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '\\\\')
-                    write('"'+parm.name+'"'+' ["'+tx+'"] ')
+                    write(' ["'+tx+'"] ')
                             
                 else:
-                    write('"'+parm.name+'"' + ' ["' + parm.textparameter + '"] ')
+                    write(' ["' + parm.textparameter + '"] ')
             if parm.parametertype == 'float' and parm.vector_size == 1:
-                write('"'+parm.name+'"' + " [" + str(parm.float_one[0]) + '] ')
+                write(" [" + str(parm.float_one[0]) + '] ')
             if parm.parametertype == 'color':
                 colR = parm.colorparameter[0]
                 colG = parm.colorparameter[1]
                 colB = parm.colorparameter[2]
-                write('"'+parm.name+'"' + " [" + str(colR) + " " + str(colG) + " " + str(colB) + "] ")
+                write(" [" + str(colR) + " " + str(colG) + " " + str(colB) + "] ")
             if parm.parametertype == 'float' and parm.vector_size == 3:
                 x = str(parm.float_three[0])
                 y = str(parm.float_three[1])
                 z = str(parm.float_three[2])
-                write('"'+parm.name+'"' + " [" + x + " " + y + " " + z + "] ")
+                write(" [" + x + " " + y + " " + z + "] ")
 
 def prepared_texture_file(file, scene):
     return os.path.splitext(file)[0]+"."+scene.renderman_settings.textureext
