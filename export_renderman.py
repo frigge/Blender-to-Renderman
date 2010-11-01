@@ -168,6 +168,11 @@ class Mappings(bpy.types.IDPropertyGroup):
 class ParticlePasses(bpy.types.IDPropertyGroup):
     pass
 
+class Empty(bpy.types.IDPropertyGroup):
+    pass
+
+class EmptyPasses(bpy.types.IDPropertyGroup):
+    pass
 
 #########################################################################################################
 #                                                                                                       #
@@ -841,7 +846,8 @@ mesh = bpy.types.Mesh
 
 mesh.primitive_type = Enum(name = "Primitive Type", default="PointsPolygon", items=(("PointsPolygons", "PointsPolygons", ""),
                                                                                     ("Points", "Points", ""),
-                                                                                    ("SubdivisionMesh", "SubdivisionMesh", "")))
+                                                                                    ("SubdivisionMesh", "SubdivisionMesh", ""),
+                                                                                    ("Quadrics", "Quadrics", "Quadrics")))                                                                           
                                                                                     
 mesh.export_type = Enum(name = "Export As", default="ReadArchive", items=(  ("ReadArchive", "ReadArchive", ""),
                                                                             ("DelayedReadArchive", "DelayedReadArchive", ""),
@@ -850,6 +856,46 @@ mesh.export_type = Enum(name = "Export As", default="ReadArchive", items=(  ("Re
 mesh.size_vgroup = String(name="Vertex Group", description="Control the siza of each point via Vertex Group", default ="")  
 
 mesh.points_scale = Float(name ="Points Scale", description="Scale of Points", min=0, max=10000, default=1) 
+
+
+#############################################
+#                                           #
+#   Empty Properties                        #
+#                                           #
+#############################################
+
+
+RNAEmpty = bpy.types.Empty
+
+RNAEmpty.renderman = Pointer(type = Empty)
+
+Empty.passes = CollectionProp(type = EmptyPasses)
+
+Empty.quadrics = Enum(  name = "Quadrics", 
+                                        description="Replace Mesh by render intern Quadrics", 
+                                        default="Points",
+                                        items = (   ("Sphere", "Sphere", "Sphere"),
+                                                    ("Cone", "Cone", "Cone"),
+                                                    ("Cylinder", "Cylinder", "Cylinder"),
+                                                    ("Hyperboloid", "Hyperboloid", "Hyperboloid"),
+                                                    ("Paraboloid", "Paraboloid", "Paraboloid"),
+                                                    ("Disk", "Disk", "Disk"),
+                                                    ("Torus", "Torus", "Torus")))         
+
+EmptyPasses.quadrics = Enum(  name = "Quadrics", 
+                                        description="Replace Mesh by render intern Quadrics", 
+                                        default="Points",
+                                        items = (   ("Sphere", "Sphere", "Sphere"),
+                                                    ("Cone", "Cone", "Cone"),
+                                                    ("Cylinder", "Cylinder", "Cylinder"),
+                                                    ("Hyperboloid", "Hyperboloid", "Hyperboloid"),
+                                                    ("Paraboloid", "Paraboloid", "Paraboloid"),
+                                                    ("Disk", "Disk", "Disk"),
+                                                    ("Torus", "Torus", "Torus")))
+                                                    
+mesh.export_type = Enum(name = "Export As", default="ReadArchive", items=(  ("ReadArchive", "ReadArchive", ""),
+                                                                            ("DelayedReadArchive", "DelayedReadArchive", ""),
+                                                                            ("ObjectInstance", "ObjectInstance", "")))                                                     
                                                                                              
 #############################################################
 #                                                           #
@@ -1067,6 +1113,21 @@ psettings = bpy.types.ParticleSettings
 
 psettings.renderman = CollectionProp(type = ParticlePasses)
 
+ParticlePasses.transformation_blur = Bool(name = "Transformtation Blur", default=False, description = "Activate Motion Blur for Particles")
+
+ParticlePasses.render_type = Enum(  name = "Render Type",
+                                    description = "Choose how to render the particles",
+                                    items = (   ("Points", "Points", "Points"),
+                                                ("Object", "Object", "Object"),
+                                                ("Group", "Group", "Group"),
+                                                ("Archive", "Archive", "Archive")))
+                                                
+ParticlePasses.object = String(name = "Object", description ="Object to use for Rendering Particles")
+
+ParticlePasses.archive = String(name ="Archive", description  = "Archive to load for Rendering Particles", subtype = "FILE_PATH") 
+
+ParticlePasses.group = String(name = "Group", description ="Objects of group to use for Rendering Particles")                                              
+
 ParticlePasses.attribute_groups = CollectionProp(type=AttributeOptionGroup)
 
 ParticlePasses.shaders = Pointer(type= Shader)
@@ -1080,22 +1141,6 @@ ParticlePasses.interior_expand = Bool(name="Expand", description="Expand Shader"
 ParticlePasses.exterior_expand = Bool(name="Expand", description="Expand Shader", default=False)
 
 ParticlePasses.arealight_expand = Bool(name="Expand", description="Expand Shader", default=False)
-
-ParticlePasses.render_geometry = Enum(  name = "Render Geometry", 
-                                        description="Geometry to use for rendering", 
-                                        default="Points",
-                                        items = (   ("Points", "Points", "Points"),
-                                                    ("Object", "Object", "Object"),
-                                                    ("ReadArchive", "ReadArchive", "ReadArchive"),
-                                                    ("DelayedReadArchive", "DelayedReadArchive", "DelayedReadArchive"),
-                                                    ("Sphere", "Sphere", "Sphere"),
-                                                    ("Cone", "Cone", "Cone"),
-                                                    ("Cylinder", "Cylinder", "Cylinder"),
-                                                    ("Hyperboloid", "Hyperboloid", "Hyperboloid"),
-                                                    ("Paraboloid", "Paraboloid", "Paraboloid"),
-                                                    ("Disk", "Disk", "Disk"),
-                                                    ("Torus", "Torus", "Torus")))
-                                                    
                                   
 ##################################################################################################################################
 #                                                                                                                                #
@@ -3747,7 +3792,7 @@ def round(float):
         integer = math.floor(float)
     return integer 
 
-def objtransform(obj, write, current_pass, scene):
+def objtransform(obj, write, current_pass, scene, mx = None):
     def writetransform(matrix):
         write('ConcatTransform [\t')    
         for i, row in enumerate(matrix):
@@ -3757,7 +3802,11 @@ def objtransform(obj, write, current_pass, scene):
         write(']\n')
     
     ## transformation blur    
-    sampletime = [] 
+    sampletime = []
+    
+    if mx: matrix = mx
+    else: matrix = obj.matrix_world
+        
     if obj.renderman[current_pass.name].transformation_blur:
         motion_samples = obj.renderman[current_pass.name].motion_samples
         current_frame = scene.frame_current  
@@ -3770,9 +3819,9 @@ def objtransform(obj, write, current_pass, scene):
             write(']\n')
             for s in sampletime:
                 scene.frame_set(current_frame - (shutterspeed - s))
-                writetransform(obj.matrix_world)
+                writetransform(matrix)
             write('MotionEnd\n')
-    else: writetransform(obj.matrix_world) 
+    else: writetransform(matrix) 
 
 
 def writeCamera(current_pass, cam, camrot, write, scene):
@@ -3938,7 +3987,7 @@ def writeWorld(current_pass, write, path, scene):
 
     if objects:
         for obj in objects:
-            if not obj.hide_render and not obj.name == current_pass.camera_object:
+            if not obj.hide_render and not obj.name == current_pass.camera_object and check_visible(obj, scene):
                 writeObject(path, obj, current_pass, write, scene)
                 writeParticles(path, obj, current_pass, write, scene)                 
     write("WorldEnd\n")
@@ -4108,33 +4157,55 @@ def writeParticles(path, obj, current_pass, write, scene):
                 
                 if not os.path.exists(particle_dir): os.mkdir(particle_dir)
                 
-                path = os.path.join(particle_dir, filename)
-                pfiles.append(path)
+                part_path = os.path.join(particle_dir, filename)
+                pfiles.append(part_path)
                 
-                file = open(path, "w")
+                file = open(part_path, "w")
                 pwrite = file.write
                 
-                pwrite('Points\n')
+                rman = psystem.settings.renderman[current_pass.name]
+            
+                ## Points
+                if rman.render_type == "Points":
+                    pwrite('Points\n')
                 
-                pwrite('"P" [')
-                for part in psystem.particles:
-                    rotation = part.rotation.to_euler()
-                    rotx = str(math.degrees(rotation[0]))
-                    roty = str(math.degrees(rotation[1]))
-                    rotz = str(math.degrees(rotation[2]))
-                    locx = str(part.location.x)
-                    locy = str(part.location.y)
-                    locz = str(part.location.z)
+                    pwrite('"P" [')
+                    for part in psystem.particles:
+                        rotation = part.rotation.to_euler()
+                        rotx = str(math.degrees(rotation[0]))
+                        roty = str(math.degrees(rotation[1]))
+                        rotz = str(math.degrees(rotation[2]))
+                        locx = str(part.location.x)
+                        locy = str(part.location.y)
+                        locz = str(part.location.z)
+                                           
+                        pwrite(locx+' '+locy+' '+locz+' ')                  
+                                       
+                    pwrite(']\n')
                     
-                    pwrite(locx+' '+locy+' '+locz+' ')
-                pwrite(']\n')
-                
-                pwrite('"width" [')
-                for part in psystem.particles:
-                    size = str(part.size)
+                    pwrite('"width" [')
+                    for part in psystem.particles:
+                        size = str(part.size)
+                        
+                        pwrite(size+' ')
+                    pwrite(']\n')
                     
-                    pwrite(size+' ')
-                pwrite(']\n')
+                ## Objects
+                elif rman.render_type == "Object":
+                    for part in psystem.particles:
+                        obj = scene.objects[rman.object]
+                        
+                        mx_new = mathutils.Matrix()
+                        trans = part.location
+                        mx_trans = mx_new.Translation(trans)
+                        mx_rot = part.rotation.to_matrix().to_4x4()
+                        mx_scale = mx_new.Scale(part.size, 4)
+                        mx = mx_trans * mx_scale * mx_rot
+                        pwrite('AttributeBegin\n')
+                        objtransform(psystem.settings, pwrite, current_pass, scene, mx = mx)
+                        
+                        writeObject(path, obj, current_pass, pwrite, scene) 
+                        pwrite('AttributeEnd\n')                         
                 
         write("\nAttributeBegin\n")
         write('Attribute "identifier" "name" ["'+obj.name+'_particles"]\n')
@@ -4158,43 +4229,42 @@ def writeParticles(path, obj, current_pass, write, scene):
 #############################################
     
 def writeObject(path, obj, current_pass, write, scene):
-    if obj.type in ['MESH']:
-        if check_visible(obj, scene):                
-            print("write "+obj.name)
-    
-            mat = obj.active_material            
+    if obj.type in ['MESH']:                
+        print("write "+obj.name)
+
+        mat = obj.active_material            
+        
+        write("##"+obj.name+'\n')
+        if obj.parent:
+            write('#child of '+obj.parent.name+'\n')
+        write("AttributeBegin\n")
+        write('Attribute "identifier" "name" ["'+obj.name+'"]\n')
+        write_attrs_or_opts(obj.renderman[current_pass.name].attribute_groups, write, "Attribute", "", scene)
+
+        if not current_pass.shadow:
+            for item in obj.renderman[current_pass.name].light_list:
+                if not item.illuminate:
+                    write('Illuminate "'+item.lightname+'"')
+                    write(' 0\n')
             
-            write("##"+obj.name+'\n')
-            if obj.parent:
-                write('#child of '+obj.parent.name+'\n')
-            write("AttributeBegin\n")
-            write('Attribute "identifier" "name" ["'+obj.name+'"]\n')
-            write_attrs_or_opts(obj.renderman[current_pass.name].attribute_groups, write, "Attribute", "", scene)
-    
-            if not current_pass.shadow:
-                for item in obj.renderman[current_pass.name].light_list:
-                    if not item.illuminate:
-                        write('Illuminate "'+item.lightname+'"')
-                        write(' 0\n')
-                
-            objtransform(obj, write, current_pass, scene)
-            rmansettings = scene.renderman_settings
-    
-            if mat: write(writeMaterial(mat, path, current_pass, scene).replace('\\', '\\\\'))
+        objtransform(obj, write, current_pass, scene)
+        rmansettings = scene.renderman_settings
+
+        if mat: write(writeMaterial(mat, path, current_pass, scene).replace('\\', '\\\\'))
+        
+        if obj.data.show_double_sided:
+            write('Sides 2\n')
             
-            if obj.data.show_double_sided:
-                write('Sides 2\n')
-                
-            write('ShadingRate '+str(obj.renderman[current_pass.name].shadingrate)+'\n')
-            
-            export_type = obj.data.export_type
-            meshpath = os.path.join(path, scene.renderman_settings.polydir)
-            if export_type == 'ObjectInstance':
-                write('ObjectInstance "'+obj.data.name+'"\n')
-            else:
-                export_object(obj, current_pass, meshpath, write, scene, export_type)
-            write("AttributeEnd\n\n")
-            print("Done")
+        write('ShadingRate '+str(obj.renderman[current_pass.name].shadingrate)+'\n')
+        
+        export_type = obj.data.export_type
+        meshpath = os.path.join(path, scene.renderman_settings.polydir)
+        if export_type == 'ObjectInstance':
+            write('ObjectInstance "'+obj.data.name+'"\n')
+        else:
+            export_object(obj, current_pass, meshpath, write, scene, export_type)
+        write("AttributeEnd\n\n")
+        print("Done")
 
 
 #############################################
@@ -4406,7 +4476,7 @@ def export(current_pass, path, scene):
         filename = name+".rib"
         file = open(os.path.join(path, filename), "w")   
         write = file.write
-        writerib(current_pass, write, path, camera, camrot, dir = "", scene = scene)
+        writerib(current_pass, write, path, camera, camrot, scene, dir = "")
         file.close()
     
     #Write RIB Files
@@ -4416,8 +4486,8 @@ def writerib(current_pass, write, path, camera, camrot, scene, dir = ""):
     for obj in scene.objects:
         if obj.type in ['MESH']:
             meshpath = os.path.join(path, scene.renderman_settings.polydir)
-            if obj.data.export_type == 'ObjectInstance' and not obj.hide_render:
-                export_object(obj, current_pass, meshpath, write, obj.data.export_type, scene)  
+            if obj.data.export_type == 'ObjectInstance':
+                export_object(obj, current_pass, meshpath, write, scene, obj.data.export_type)  
     writeSettings(current_pass, write, dir = dir, scene = scene)
 
     if current_pass.displaydrivers:
@@ -6618,10 +6688,6 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
             checkshaderparameter(obj.name+psystem.name+"int", active_pass, rman.shaders.interior_shader, rman.shaders.interior_shader_parameter, scene)
 
             matparmlayout(rman.shaders.interior_shader_parameter, int_box, bpy.data)
-            
-        geometry_box = layout.box()
-        row = geometry_box.row()
-        row.prop(rman, "render_geometry")
         
         row = layout.row()    
         col = row.column(align=True)
@@ -6659,7 +6725,18 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
 
             matparmlayout(rman.shaders.light_shader_parameter, area_box, bpy.data)  
             
-            
+        layout.prop(rman, "render_type")
+        if rman.render_type == "Object":
+            psystem.settings.render_type = 'OBJECT'
+            if rman.object in scene.objects:
+                psystem.settings.dupli_object = scene.objects[rman.object]
+            layout.prop_search(rman, "object", scene, "objects")
+        elif rman.render_type == "Archive":
+            layout.prop(rman, "archive")
+        elif rman.render_type == "Group":
+            layout.prop_search(rman, "group", bpy.data, "groups")
+        
+        
 class Particle_PT_AttributePanel(ParticleButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Attributes"
     bl_default_closed = True
@@ -6698,7 +6775,27 @@ class Particle_PT_AttributePanel(ParticleButtonsPanel, bpy.types.Panel):
                     row.prop(attribute, "export", text="")
                     row.operator("attribute.obj_get_default", text="", icon="ANIM").grp_opt = group.name + ' ' + attribute.name
                     row.operator("attribute.obj_set_default", text="", icon="FILE_TICK").grp_opt = group.name + ' ' + attribute.name                  
-                                                          
+
+
+##################################################################################################################################
+
+#########################################################################################################
+#                                                                                                       #
+#      Empty Panels                                                                                     #
+#                                                                                                       #
+#########################################################################################################   
+
+
+#class EmptyButtonsPanel():
+#    bl_space_type = "PROPERTIES"
+#    bl_region_type = "WINDOW"
+#    bl_context = "Object"
+#    
+#    def poll(cls, context):
+#        return 
+#    def draw(self, context):
+#        layout = self.layout
+                                                              
     
 ##################################################################################################################################
 
