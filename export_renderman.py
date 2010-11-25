@@ -13,7 +13,7 @@
 #This program is free software;                                                             #
 #you can redistribute it and/or modify it under the terms of the                            #
 #GNU General Public License as published by the Free Software Foundation;                   #
-#either version 3 of the LicensGe, or (at your option) any later version.                    #
+#either version 3 of the LicensGe, or (at your option) any later version.                   #
 #                                                                                           #
 #This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;  #
 #without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  #
@@ -28,6 +28,7 @@
 #                                                                                           #
 ############################################################################################
 
+#Thanks to: Campbell Barton, Eric Back, Nathan Vegdahl
 
 ##################################################################################################################################
 
@@ -36,7 +37,7 @@ bl_addon_info = {
     'name': 'Renderman',
     'author': 'Sascha Fricke',
     'version': '0.01',
-    'blender': (2, 5, 4),
+    'blender': (2, 5, 5),
     'location': 'Info Header',
     'description': 'Connects Blender to Renderman Interface',
     'category': 'Render'}
@@ -106,6 +107,8 @@ assigned_shaders = {}
 objects_size = -1
 light_list = []
 light_list_size = -1
+obj_passes = {}
+
 
 
 ##################################################################################################################################
@@ -174,6 +177,9 @@ class Empty(bpy.types.IDPropertyGroup):
 class EmptyPasses(bpy.types.IDPropertyGroup):
     pass
 
+class RibStructure(bpy.types.IDPropertyGroup):
+    pass
+
 #########################################################################################################
 #                                                                                                       #
 #       Create Properties                                                                               #
@@ -189,6 +195,15 @@ IntVector = bpy.props.IntVectorProperty
 Int = bpy.props.IntProperty
 Float = bpy.props.FloatProperty
 
+RibStructure.own_file = Bool(default = True, name = "Own File", description="write into own RIB Archive")
+
+RibStructure.filename = String(name="File", default="", subtype = 'FILE_PATH')
+
+RibStructure.default_name = Bool(default = True, name = "Default Name", description = "Default RIB Archive Name")
+
+RibStructure.overwrite = Bool(default = True, name = "Overwrite", description="overwrite existing files")
+
+RibStructure.expand = Bool(default=False, name="Expand", description="Expand Properties")
 
 Collection.parametertype = Enum(items=(
                                 ("string", "String", "String Parameter"),
@@ -294,7 +309,11 @@ RendermanSceneSettings.default_hider = String()
 
 Hider.options = CollectionProp(type=Collection)
 
-passes.hider = String()                                            
+passes.hider = String()
+
+RendermanSceneSettings.settings_rib_structure = Pointer(type=RibStructure)
+
+RendermanSceneSettings.world_rib_structure = Pointer(type=RibStructure)
                                             
 #############################################
 #                                           #
@@ -423,7 +442,7 @@ RendermanSceneSettings.framepadding = Int(default=4,
 
 RendermanSceneSettings.passes = CollectionProp(type=passes)
 
-RendermanSceneSettings.passesindex = Int(default=-1,
+RendermanSceneSettings.passes_index = Int(default=-1,
                                 min=-1,
                                 max=1000)
 
@@ -544,6 +563,22 @@ RendermanSceneSettings.ribpath = String(name="RIB Path",
                         default="",
                         options={'HIDDEN'},
                         subtype='DIR_PATH')
+
+RendermanSceneSettings.objectdir = String( name="Objects",
+                                        description = "Folder where Object Archives are stored",
+                                        default = "Objects")
+                                        
+RendermanSceneSettings.settingsdir = String( name="Settings",
+                                        description = "Folder where Settings Archives are stored",
+                                        default = "Settings")
+                                        
+RendermanSceneSettings.worlddir = String( name="Worlds",
+                                        description = "Folder where World Archives are stored",
+                                        default = "Worlds")
+                                        
+RendermanSceneSettings.bakedir = String( name="Bake",
+                                        description = "Folder where bake files are stored",
+                                        default = "Bakes")                                                                                                                        
 
 RendermanSceneSettings.polydir = String(name="Poly Mesh Folder",
                         description="Folder where Poly Meshes are stored",
@@ -736,7 +771,7 @@ ObjectParameters.perspective_blur = Bool(   name="perspective_blur",
 #   Light Properties                        #
 #                                           #
 #############################################
-
+Shader.links = CollectionProp(type = EmptyCollections)
 
 Shader.customshader = Bool(name="Custom Shader",
                             description="Assign custom shader",
@@ -765,6 +800,8 @@ Shader.light_shader_parameter = CollectionProp(type=Collection ,
 Shader.use_as_light = Bool(name="AreaLight", description="use the object this material is assigned to as an AreaLight")
 
 bpy.types.Lamp.renderman = CollectionProp(type=Shader)
+
+bpy.types.Lamp.renderman_index = Int(min = -1, max = 1000, default = -1)
 
 RendermanLightSettings.shadow_map_resolution = Int(min=0,
                                 max=50000,
@@ -804,7 +841,11 @@ Object = bpy.types.Object
 
 Object.env = Bool(default=False)
 
-Object.renderman = CollectionProp(type = ObjectParameters)
+Object.renderman = CollectionProp(type = ObjectParameters, name="Renderman")
+
+Object.renderman_index = Int(min = -1, max = 1000, default = -1)
+
+ObjectParameters.links = CollectionProp(type = EmptyCollections)
 
 ObjectParameters.attribute_groups = CollectionProp(type=AttributeOptionGroup)
 
@@ -967,6 +1008,8 @@ RendermanTexture.fov = Float(   min=1,
                                 description = "Field of View for environment maps")                                                        
 
 mat.renderman = CollectionProp(type=Shader)
+
+mat.renderman_index = Int(min = -1, max = 1000, default = -1)
                         
 Shader.arealight_shader = String(name="AreaLight", description="Area Light Shader")                        
 
@@ -1115,7 +1158,13 @@ psettings = bpy.types.ParticleSettings
 
 psettings.renderman = CollectionProp(type = ParticlePasses)
 
-ParticlePasses.transformation_blur = Bool(name = "Transformtation Blur", default=False, description = "Activate Motion Blur for Particles")
+psettings.renderman_index = Int(min = -1, max = 1000, default = -1)
+
+ParticlePasses.links = CollectionProp(type = EmptyCollections)
+
+ParticlePasses.motion_blur = Bool(name = "Motion Blur", default=False, description = "Activate Motion Blur for Particles")
+
+ParticlePasses.motion_samples = Int(name = "motion samples", description="Number samples to export in this motion block", min=2, max = 100, default = 2)
 
 ParticlePasses.render_type = Enum(  name = "Render Type",
                                     description = "Choose how to render the particles",
@@ -1153,10 +1202,8 @@ ParticlePasses.arealight_expand = Bool(name="Expand", description="Expand Shader
 def checkForPath(target_path): # create Presetsdirecory if not found
     try:
         if os.path.exists(target_path):
-            print('Presetspath found')
             pass
         else:
-            print('\nPresetspath not found. Creating:\n', target_path)
             os.mkdir(target_path)
     except:
         pass
@@ -1184,8 +1231,6 @@ class ExecuteRendermanPreset(bpy.types.Operator):
     bl_label = "Execute a Python Preset"
 
     filepath = bpy.props.StringProperty(name="Path", description="Path of the Python file to execute", maxlen=512, default="")
-    preset_name = bpy.props.StringProperty(name="Preset Name", description="Name of the Preset being executed", default="")
-    menu_idname = bpy.props.StringProperty(name="Menu ID Name", description="ID name of the menu this was called from", default="")
 
     def execute(self, context):
 #        # change the menu title to the most recently chosen option
@@ -1249,7 +1294,7 @@ class AddPresetRenderer(bpy.types.Operator):
         if not self.name:
             return {'FINISHED'}
         presetname = self._as_filename(self.name)
-        filename = presetname + ".py"
+        filename = self.name
 
         target_path = bpy.utils.preset_paths(self.preset_subdir)[0] # we need some way to tell the user and system preset path
 
@@ -1341,7 +1386,49 @@ class AddPresetRenderer(bpy.types.Operator):
 
         wm.invoke_props_popup(self, event)
         return {'RUNNING_MODAL'}
-                
+
+
+def write_sub_preset(grp, sub_path, write):
+    export = {True : "1", False : "0"}
+    for sub in sub_path:
+        if sub.preset_include:
+            float_size = {1 : sub.float_one, 2 : sub.float_two, 3 : sub.float_three}
+            int_size = {1 : sub.int_one, 2 : sub.int_two, 3 : sub.int_three}
+            type = {"float" : float_size, "int" : int_size}
+
+            ptype = sub.parametertype
+            
+            write(grp.name + " " + sub.name + " ")
+            if ptype == "string":
+                write('"'+sub.textparameter+'" ')
+            elif ptype == "color":
+                r, g, b = sub.colorparameter
+                write("("+str(r)+" "+str(g)+" "+str(b)+") ")
+            elif ptype in ["float", "int"]:
+                v = sub.vector_size
+                if v == 1:
+                    a = type[ptype][v][0]
+                    write(str(a)+" ")
+                elif v == 2:
+                    a, b = type[ptype][v]
+                    write("("+str(a)+" "+str(b)+") ")
+                elif v == 3:
+                    a, b, c = type[ptype][v]
+                    write("("+str(a)+" "+str(b)+" "+str(c)+") ")
+            write(export[sub.export]+"\n")
+            
+            
+def write_grp_preset(path, type, write):
+    gtype = {   "attr" : path.attribute_groups,
+                "opt" : path.option_groups}
+                                    
+    for grp in gtype[type]:
+        export = {True : "1", False : "0"}
+        if grp.preset_include:
+            write(grp.name+" "+export[grp.export]+"\n")
+            stype = {   'attr' : grp.attributes,
+                        'opt' : grp.options}               
+            write_sub_preset(grp, stype[type], write)
     
 class WriteAttributePreset(bpy.types.Operator):
     bl_label = "write Preset"
@@ -1356,6 +1443,7 @@ class WriteAttributePreset(bpy.types.Operator):
         target_path = bpy.utils.preset_paths(rmansettings.active_engine)[0]
         checkForPath(target_path)
         filename = rmansettings.presetname+".preset"
+        rmansettings.presetname = ""
         filename = filename.replace(" ", "_")
         subpreset = os.path.join(target_path, filename)
         
@@ -1368,36 +1456,7 @@ class WriteAttributePreset(bpy.types.Operator):
         if self.obj: rna_path = scene.objects[self.obj].renderman[getactivepass(scene).name]
         else: rna_path = getactivepass(context.scene)
             
-        for grp in rna_path.attribute_groups:
-            export = {True : "1", False : "0"}
-            if grp.preset_include:
-                file.write(grp.name+" "+export[grp.export]+"\n")                
-                for attr in grp.attributes:
-                    if attr.preset_include:
-                        float_size = {1 : attr.float_one, 2 : attr.float_two, 3 : attr.float_three}
-                        int_size = {1 : attr.int_one, 2 : attr.int_two, 3 : attr.int_three}
-                        type = {"float" : float_size, "int" : int_size}
-        
-                        ptype = attr.parametertype
-                        
-                        file.write(grp.name + " " + attr.name + " ")
-                        if ptype == "string":
-                            file.write('"'+attr.textparameter+'" ')
-                        elif ptype == "color":
-                            r, g, b = attr.colorparameter
-                            file.write("("+str(r)+" "+str(g)+" "+str(b)+") ")
-                        elif ptype in ["float", "int"]:
-                            v = attr.vector_size
-                            if v == 1:
-                                a = type[ptype][v][0]
-                                file.write(str(a)+" ")
-                            elif v == 2:
-                                a, b = type[ptype][v]
-                                file.write("("+str(a)+" "+str(b)+") ")
-                            elif v == 3:
-                                a, b, c = type[ptype][v]
-                                file.write("("+str(a)+" "+str(b)+" "+str(c)+") ")
-                        file.write(export[attr.export]+"\n")
+        write_grp_preset(rna_path, "attr")
                     
         return {'FINISHED'}  
     
@@ -1434,25 +1493,81 @@ class AddAttributePreset(bpy.types.Operator):
         row.prop(renderman_settings, "presetname")
         row.operator("attribute.write_preset", text="write Preset").obj = self.obj
 
+def load_sub_preset(sub_path, line):
+    export = {"1" : True, "0" : False}
+    raw_value = ""
+    if line.find("(") != -1:
+        raw_value = line[line.find("("):line.find(")")].replace("(", "")
+        line = line.replace("("+raw_value+")", "")
+        val = raw_value.split()
+        grp_name, sub_name, ex = line.split()
+    else:
+        grp_name, sub_name, val, ex = line.split()
+    
+    if not sub_name in sub_path:
+        sub_path.add().name = sub_name
+    sub = sub_path[sub_name]
+    
+    ptype = sub.parametertype
+    float_size = {1 : sub.float_one, 2 : sub.float_two, 3 : sub.float_three}
+    int_size = {1 : sub.int_one, 2 : sub.int_two, 3 : sub.int_three}
+                    
+    sub.export = export[ex]
+    if ptype == "string": sub.textparameter = val.replace('"', '')
+    
+    elif ptype == "color":
+        for i, v in enumerate(val): 
+            sub.colorparameter[i] = float(v)        
+                                         
+    elif ptype == "float":
+        if sub.vector_size > 1:
+            for i, v in enumerate(val):
+                float_size[sub.vector_size][i] = float(v)
+        else:                       
+            float_size[sub.vector_size][0] = float(val)
+        
+    elif ptype == "int":
+        if sub.vector_size > 1:
+            for i, v in enumerate(val):
+                int_size[sub.vector_size][i] = int(v)
+        else:
+            int_size[sub.vector_size][0] = int(val)
+                   
+def load_grp_preset(prs, path, type):
+    if type == "attr": grps = path.attribute_groups
+    else: grps = path.option_groups
+    
+    export = {"0" : False, "1" : True}
+        
+    for line in prs:              
+        if len(line.split()) == 2:
+            grp_name, grp_export = line.split()
+            if not grp_name in grps: grps.add().name = grp_name
+            grps[grp_name].export = export[grp_export]
+            
+        else:
+            stype = {   "attr" : grps[grp_name].attributes,
+                        "opt" : grps[grp_name].options}
+            sub = stype[type]
+            load_sub_preset(sub, line)
+
+                    
     
 class LoadAttributePreset(bpy.types.Operator):
     bl_label = "load Preset"
     bl_idname = "attribute.load"
     bl_description = "load preset"
     
-    preset_obj = bpy.props.StringProperty()
+    preset = String(default = "")
+    path = String(default = "")
     
     def execute(self, context):
         scene = context.scene
         rmansettings = context.scene.renderman_settings
-        target_path = bpy.utils.preset_paths(rmansettings.active_engine)[0]
-        if self.preset_obj.find(" ") == -1:
-            print("load preset for world attributes")
-            preset = self.preset_obj
-            print(preset)
-            obj = ""
-        else:
-            preset, obj = self.preset_obj.split()
+        target_path = os.path.join(bpy.utils.preset_paths("renderman")[0], rmansettings.active_engine)
+
+        preset = self.preset
+        path = eval(self.path)
             
         filename = preset+".preset"
         subpreset = os.path.join(target_path, filename)
@@ -1462,60 +1577,9 @@ class LoadAttributePreset(bpy.types.Operator):
         except:
             print("file not found")
             return {'CANCELLED'}
-        
-        if obj != "": rna_path = context.scene.objects[obj].renderman[getactivepass(scene).name]
-        else: rna_path = getactivepass(context.scene)
-        grps = rna_path.attribute_groups
-        export = {"0" : False, "1" : True}
-            
-        preset = file.readlines()
-        
-        for line in preset:                
-            if len(line.split()) == 2:
-                grp_name, grp_export = line.split()
-                grps[grp_name].export = export[grp_export]
-                
-            else:
-                raw_value = ""
-                if line.find("(") != -1:
-                    raw_value = line[line.find("("):line.find(")")].replace("(", "")
-                    line = line.replace("("+raw_value+")", "")
-                    val = raw_value.split()
-                    grp_name, attr_name, ex = line.split()
-                else:
-                    grp_name, attr_name, val, ex = line.split()
-                    
-                attr = grps[grp_name].attributes[attr_name]
-                ptype = attr.parametertype
-                float_size = {1 : attr.float_one, 2 : attr.float_two, 3 : attr.float_three}
-                int_size = {1 : attr.int_one, 2 : attr.int_two, 3 : attr.int_three}
-                                
-                attr.export = export[ex]
-                if ptype == "string": attr.textparameter = val.replace('"', '')
-                
-                elif ptype == "color":
-                    i=-1
-                    for v in val: 
-                        i+=1
-                        attr.colorparameter[i] = float(v)        
-                                                     
-                elif ptype == "float":
-                    if attr.vector_size > 1:
-                        i = -1
-                        for v in val:
-                            i+=1
-                            float_size[attr.vector_size][i] = float(v)
-                    else:                       
-                        float_size[attr.vector_size][0] = float(val)
-                    
-                elif ptype == "int":
-                    if attr.vector_size > 1:
-                        i=-1
-                        for v in val: 
-                            i+=1
-                            int_size[attr.vector_size][i] = int(v)
-                    else:
-                        int_size[attr.vector_size][0] = int(val)
+
+        attributes = file.readlines()
+        load_grp_preset(attributes, path, "attr")
                     
         return {'FINISHED'}
    
@@ -1541,12 +1605,12 @@ class LoadAttributePresettoSelected(bpy.types.Operator):
 def getactivepass(scene):
     maintain_beauty_pass(scene)
     renderman_settings = scene.renderman_settings
-    passindex = renderman_settings.passesindex
+    passindex = renderman_settings.passes_index
     passes = renderman_settings.passes
     if passindex >= len(passes):
-        scene.renderman_settings.passesindex = len(passes)-1
-        passindex = renderman_settings.passesindex
-    active_pass = passes[scene.renderman_settings.passesindex]
+        scene.renderman_settings.passes_index = len(passes)-1
+        passindex = renderman_settings.passes_index
+    active_pass = passes[scene.renderman_settings.passes_index]
     return active_pass
 
 #########################################################################################################
@@ -1594,7 +1658,7 @@ class Renderman_OT_LightLinking(bpy.types.Operator):
     def invoke(self, context, event):
         scene = context.scene
         obj = context.object
-        for item in obj.renderman[getactivepass(scene).name].light_list:
+        for item in obj.renderman[obj.renderman_index].light_list:
             type = self.type
             if type == "invert":
                 item.illuminate = not item.illuminate 
@@ -1641,7 +1705,7 @@ class Renderman_OT_addDisplay(bpy.types.Operator):
     
     def invoke(self, context, event):
         adddisp(getactivepass(context.scene))
-        return{'FINISHED'}
+        return {'FINISHED'}
 
 class Renderman_OT_removeDisplay(bpy.types.Operator):
     bl_label = "removeDisplay"
@@ -1655,7 +1719,7 @@ class Renderman_OT_removeDisplay(bpy.types.Operator):
         active_pass = getactivepass(scene)
         index = self.index
         active_pass.displaydrivers.remove(index)
-        return{'FINISHED'}
+        return {'FINISHED'}
 
 class Renderman_OT_adddisplayoption(bpy.types.Operator):
     bl_label = "add option"
@@ -1668,7 +1732,20 @@ class Renderman_OT_adddisplayoption(bpy.types.Operator):
         scene = context.scene
         active_pass = getactivepass(scene)
         display = active_pass.displaydrivers[self.display]
-        display.custom_options.add()
+        defcount = 1
+        
+        def getdefname(name, count):
+            countstr = "0"*(2 - len(str(count))) + str(count)
+            defaultname = name+countstr
+            return defaultname
+    
+        defname = "Default01"
+    
+        for item in display.custom_options:
+            if item.name == defname:
+                defcount +=1
+                defname = getdefname("Default", defcount)    
+        display.custom_options.add().name = defname
     
         return {'FINISHED'}          
         
@@ -1684,7 +1761,8 @@ class Renderman_OT_removedisplayoption(bpy.types.Operator):
         active_pass = getactivepass(scene)
         disp, opt = self.disp_opt.split()
         display = active_pass.displaydrivers[disp]
-        display.custom_options.remove(int(opt))  
+        display.custom_options.remove(int(opt))
+        return {'FINISHED'} 
         
 class Renderman_OT_senddisplay(bpy.types.Operator):
     bl_label = "send Display"
@@ -1717,14 +1795,377 @@ class Renderman_OT_senddisplay(bpy.types.Operator):
 #                                           #
 #############################################
 
+class Renderman_OT_addPassPreset(bpy.types.Operator):
+    bl_label = "Add Preset"
+    bl_idname = "renderman.addpasspreset"
+    bl_description = "add Pass Preset"
+    
+    def invoke(self, context, event):
+        scene = context.scene
+        wm = context.window_manager
+        wm.invoke_popup(self)
+        return {'RUNNING_MODAL'}
+    
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        rmansettings = scene.renderman_settings
+        layout.prop(rmansettings, "presetname")
+        layout.operator("renderman.writepasspreset")
+        
+
+class Renderman_OT_writePassPreset(bpy.types.Operator):
+    bl_label = "Write Preset"
+    bl_idname = "renderman.writepasspreset"
+    bl_description = "write Pass Preset"
+    
+    def invoke(self, context, event):
+        scene = context.scene
+        rmansettings = scene.renderman_settings
+        active_pass = getactivepass(scene)
+        active_engine = scene.renderman_settings.active_engine
+        main_preset_path = bpy.utils.preset_paths('renderman')[0]
+        sub_preset_path = os.path.join(main_preset_path, active_engine)
+        checkForPath(sub_preset_path)
+        preset = rmansettings.presetname
+        rmansettings.presetname = ""
+        
+        preset_file = os.path.join(sub_preset_path, preset)+'.pass'
+        
+        file = open(preset_file, "w")
+
+        e = ' = '
+        a_pass = 'bpy.context.scene.renderman_settings.passes["'+active_pass.name+'"].'
+        def w(slist): 
+            for s in slist:
+                val_raw = eval(a_pass+s)
+                if type(val_raw) == type(""): val = '"'+val_raw+'"'
+                else: val = str(val_raw)
+                file.write(s + e + val + '\n')
+        
+        ## Settings
+        # Quality
+        file.write('##Quality\n')
+        w([ 'pixelsamples_x',
+            'pixelsamples_y',
+            'pixelfilter.filterlist',
+            'pixelfilter.filterheight',
+            'pixelfilter.filterwidth',
+            'pixelfilter.customfilter'])
+        file.write('##\n\n')
+        
+        # Motion Blur
+        file.write('##Motion Blur\n')
+        w([ 'motionblur',
+            'shutterspeed'])
+        file.write('##\n\n')
+        
+        # Export Objects
+        file.write('##Export Objects\n')
+        w([ 'exportobjects',
+            'objectgroup'])
+        file.write('##\n\n')
+        
+        # Export Lights
+        file.write('##Export Lights\n')
+        w([ 'exportlights',
+            'lightgroup'])
+        file.write('##\n\n')
+        
+        # Animate Pass
+        file.write('##Animate Pass\n')
+        w(['exportanimation'])
+        file.write('##\n\n')
+        
+        ## Options
+        file.write('##Options\n')
+        write_grp_preset(active_pass, "opt", file.write)
+        file.write('##\n\n')
+        
+        ## Hider
+        hider = active_pass.hider
+        if hider in scene.renderman_settings.hider_list:
+            file.write('##Hider\n')
+            file.write(hider+'\n')
+            curr_hider = active_pass.hider_list[hider]
+            write_sub_preset(curr_hider, curr_hider.options, file.write)
+            file.write('##\n\n')
+        
+        ## Display Driver
+        file.write('##Displays\n')
+        for disp in active_pass.displaydrivers:
+            file.write('NewDisplay '+disp.name+'\n')
+            disppath = 'displaydrivers["'+disp.name+'"].'
+            w([ disppath+'name',
+                disppath+'displaydriver',
+                disppath+'filename_var',
+                disppath+'gain',
+                disppath+'gamma',
+                disppath+'quantize_black',
+                disppath+'quantize_white',
+                disppath+'quantize_min',
+                disppath+'quantize_max',
+                disppath+'send'])
+            file.write('#Custom Options\n')
+            write_sub_preset(disp, disp.custom_options, file.write)
+        file.write('##\n\n')
+        
+        ## Custom Pass Rib Code
+        file.write('##Custom Scene RIB Code\n')
+        for sc in active_pass.scene_code:
+            file.write(sc.name+'\n')
+        file.write('##\n\n')
+        
+        ## Custom World Rib Code
+        file.write('##Custom World RIB Code\n')
+        for wc in active_pass.world_code:
+            file.write(wc.name+'\n')
+        file.write('##\n\n')
+        
+        ## World Attribute Preset World Shading Rate, etc. Settings(overrides for Objects)
+        file.write('##Attribute Preset\n')
+        write_grp_preset(active_pass, "attr", file.write)
+        file.write('##\n\n')
+        
+        ##World Shaders
+        file.write('##World Shaders\n')
+        gshad = active_pass.global_shader
+        g = 'global_shader.'
+        w([ 'imager_shader',
+            g+'surface_shader',
+            g+'atmosphere_shader'])
+        file.write('##\n\n')
+
+        def shader_presets(shader_parameter, shad_path):
+            for parm in shader_parameter:
+                parm_path = shad_path+'["'+parm.name+'"].'
+                w([ parm_path+"textparameter",
+                    parm_path+"vector_size",
+                    parm_path+"parametertype",
+                    parm_path+"float_one[0]",
+                    parm_path+"float_two[0]",
+                    parm_path+"float_two[1]",
+                    parm_path+"float_three[0]",
+                    parm_path+"float_three[1]",
+                    parm_path+"float_three[2]",
+                    parm_path+"int_one[0]",
+                    parm_path+"int_two[0]",
+                    parm_path+"int_two[1]",
+                    parm_path+"int_three[0]",
+                    parm_path+"int_three[1]",
+                    parm_path+"int_three[2]",
+                    parm_path+"texture",
+                    parm_path+"colorparameter[0]",
+                    parm_path+"colorparameter[1]",
+                    parm_path+"colorparameter[2]"])
+                file.write('##\n\n')
+                        
+        ##Imager
+        if active_pass.imager_shader != "":
+            file.write('##Imager\n')        
+            shader_presets(active_pass.imager_shader_parameter, 'imager_shader_parameter')                        
+
+        ##Surface
+        if gshad.surface_shader != "":
+            file.write('##Surface\n')        
+            shader_presets(gshad.surface_shader_parameter, g+'surface_shader_parameter')
+            
+        ##Atmosphere
+        if gshad.atmosphere_shader != "":
+            file.write('##Atmosphere\n')        
+            shader_presets(gshad.atmosphere_shader_parameter, g+'atmosphere_shader_parameter')
+        file.write('##\n\n')                  
+        return {'FINISHED'}
+        
+
+def invoke_preset(rpass, preset, scene):
+    active_engine = scene.renderman_settings.active_engine
+    main_preset_path = bpy.utils.preset_paths('renderman')[0]
+    sub_preset_path = os.path.join(main_preset_path, active_engine)
+    
+    preset_file = os.path.join(sub_preset_path, preset)+'.pass'
+
+    pass_path = 'bpy.context.scene.renderman_settings.passes["'+rpass.name+'"].'
+    
+    try:
+        file = open(preset_file, "r")
+    except:
+        print("file not found")
+        return 0
+
+    def eval_preset(ei, plines):
+        pi = ei
+        while True:
+            pi += 1
+            pline = plines[pi]
+            if pline == '##\n': break
+            else:
+                prop = pass_path + pline
+                exec(prop)
+
+    def eval_sub_preset(ei, plines, type):                
+        subs = []
+        pi = ei
+        while True:
+            pi += 1
+            line = lines[pi]
+            if line == '##\n': break
+            else:
+                subs.append(line)
+        load_grp_preset(subs, rpass, type)                
+    
+    lines = file.readlines()
+    
+    for i, line in enumerate(lines):
+        if line in ['##Quality\n', 
+                    '##Motion Blur\n', 
+                    '##Export Objects\n', 
+                    '##Export Lights\n', 
+                    '##Animate Pass\n',
+                    '##World Shaders\n']:
+            eval_preset(i, lines)
+            checkshaderparameter("worldi", rpass, rpass.imager_shader, rpass.imager_shader_parameter, scene)
+            checkshaderparameter("worlds", rpass, rpass.global_shader.surface_shader, rpass.global_shader.surface_shader_parameter, scene)
+            checkshaderparameter("worlda", rpass, rpass.global_shader.atmosphere_shader, rpass.global_shader.atmosphere_shader_parameter, scene)
+            
+        elif line == '##Options\n':
+            eval_sub_preset(i, lines, "opt")
+        
+        elif line == '##Hider\n':
+            pi = i
+            pi += 1
+            hider = lines[pi].replace('\n', '')
+            rpass.hider = hider
+            while True:
+                pi += 1
+                hline = lines[pi]
+                if hline == '##\n': break
+                else:
+                    load_sub_preset(rpass.hider_list[hider].options, hline)
+            
+        elif line == '##Displays\n':
+            disp_name = ""
+            disp = None
+            disp_path = ""
+            co = False
+            pi = i
+            while True:
+                pi += 1
+                dline = lines[pi]
+                if dline == '##\n': break
+                else:               
+                    if dline.find('NewDisplay') != -1:
+                        disp_name = dline.split()[1]
+                        if not disp_name in rpass.displaydrivers:
+                            rpass.displaydrivers.add().name = disp_name
+                        disp = rpass.displaydrivers[disp_name]
+                        disp_path = pass_path + 'displaydrivers["'+disp_name+'"].'
+                        co = False
+                    elif dline == '#Custom Options\n': 
+                        co = True
+                    elif co:
+                        load_sub_preset(disp.custom_options, dline)
+                    else:
+                        prop = pass_path + dline
+                        exec(prop)
+                        
+        elif line == '##Custom Scene RIB Code\n':
+            pi = i
+            while True:
+                pi += 1
+                pline = lines[pi]
+                if pline == '##\n': break
+                else:
+                    if not pline in rpass.scene_code:
+                        rpass.scene_code.add().name = pline
+                    
+        elif line == '##Custom World RIB Code\n':
+            pi = i
+            while True:
+                pi += 1
+                pline = lines[pi]
+                if pline == '##\n': break
+                else:
+                    if not pline in rpass.world_code:
+                        rpass.world_code.add().name = pline
+                    
+        elif line in ['##Imager\n', '##Surface\n', '##Atmosphere\n']:
+            eval_preset(i, lines)                  
+                    
+
+
+class Renderman_OT_loadPresetPass(bpy.types.Operator):
+    bl_label = "Load Pass Preset"
+    bl_idname = "renderman.loadpresetpass"
+    bl_description = "load Preset Pass"
+    
+    props = bpy.props
+    
+    preset = props.StringProperty()
+    
+    def invoke(self, context, event):
+        scene = context.scene
+        current_pass = getactivepass(scene)
+       
+        preset = self.preset
+        
+        invoke_preset(current_pass, preset, scene)
+        return {'FINISHED'}
+
+
+class Renderman_OT_addPresetPass(bpy.types.Operator):
+    bl_label = "Add Pass"
+    bl_idname = "renderman.addpresetpass"
+    bl_description = "add Preset Pass"
+    
+    props = bpy.props
+    
+    preset = props.StringProperty()
+    
+    def invoke(self, context, event):
+        scene = context.scene
+        passes = scene.renderman_settings.passes
+       
+        preset = self.preset
+        name = preset
+        defcount = 1
+        defname = name+"01"
+        print(name)
+        for item in passes:
+            if item.name == defname:
+                defcount += 1
+                defname = name + "0"*(2 - len(str(defcount))) + str(defcount)
+        passes.add().name = defname
+        maintain(scene)
+        invoke_preset(passes[defname], preset, scene)
+        
+        return {'FINISHED'}
+        
+class Renderman_OT_remPass(bpy.types.Operator):
+    bl_label = "Remove Pass"
+    bl_idname = "renderman.rempass"
+    bl_description = "Remove Renderman Pass"
+    
+    path = bpy.props.StringProperty()
+    
+    def invoke(self, context, event):
+        path = eval(self.path)
+        index = eval(self.path+'_index')
+        path.remove(index)
+        
+        return {'FINISHED'}
+          
+
 class Renderman_OT_addPass(bpy.types.Operator):
     bl_label = "addPass"
     bl_idname = "addpass"
     bl_description = "add render Pass"
     
+    path = bpy.props.StringProperty()
+    
     def invoke(self, context, event):
         scene = context.scene
-        passes = scene.renderman_settings.passes
+        passes = eval(self.path)
         name = "Default"
         defcount = 1
         defname = "Default01"
@@ -1732,7 +2173,7 @@ class Renderman_OT_addPass(bpy.types.Operator):
             if item.name == defname:
                 defcount += 1
                 defname = name + "0"*(2 - len(str(defcount))) + str(defcount)
-        scene.renderman_settings.passes.add().name = defname
+        passes.add().name = defname
         return{'FINISHED'}
 
 class Renderman_OT_removePass(bpy.types.Operator):
@@ -1742,7 +2183,7 @@ class Renderman_OT_removePass(bpy.types.Operator):
 
     def invoke(self, context, event):
         scene = context.scene
-        index = scene.renderman_settings.passesindex
+        index = scene.renderman_settings.passes_index
         if len(scene.renderman_settings.passes) > 1:
             scene.renderman_settings.passes.remove(index)
         return{'FINISHED'}
@@ -1762,7 +2203,7 @@ class Renderman_OT_movepass(bpy.types.Operator):
 
     def invoke(self, context, event):
         renderman_settings = context.scene.renderman_settings
-        index = renderman_settings.passesindex
+        index = renderman_settings.passes_index
         if self.direction == "up":
             renderman_settings.passes.move(index, index-1)
         elif self.direction == "down":
@@ -1933,8 +2374,82 @@ class Renderman_OT_set_group_default(bpy.types.Operator):
 #                                           #
 #  World Operator                           #
 #                                           #
-#############################################
+#############################################  
+class Renderman_OT_addnew_Attribute(bpy.types.Operator):
+    bl_label = ""
+    bl_idname = "attributes.add_new"
+    bl_description = "add new attribute"
+    
+    grp = String()
+    attr = String()
+    path = String()
+    
+    def execute(self, context):
+        path = eval(self.path)
+        try:
+            grps = path.attribute_groups
+        except:
+            print(self.path)
+            raise
+        if not self.grp in grps: grps.add().name = self.grp
+        grp = grps[self.grp]
+        if not self.attr in grp.attributes: grp.attributes.add().name = self.attr
+        print(self.attr)
+        return {'FINISHED'}
+    
+        
+def removeattrop(name, path):
+    def invoke(self, context, event):
+        p = eval(path)
+        p = p[eval(path+'_index')]
+        for grp in p.attribute_groups:
+            p.attribute_groups.remove(0)
+        return {'FINISHED'}
+    
+    oname = "Renderman_OT_"+name+"_attributes_remove_all"
+    oidname = "attributes."+name+"_remove_all"
+       
+    type(bpy.types.Operator)(oname, ((bpy.types.Operator),), {  "bl_label" : "Remove All",
+                                                                "bl_idname" : oidname,
+                                                                "bl_description" : "remove all attributes",
+                                                                "path" : String(),
+                                                                "invoke" : invoke})
 
+remops = {  "world" : "bpy.context.scene.renderman_settings.passes",
+            "object" : "bpy.context.object.renderman",
+            "particle" : "bpy.context.particle_system.settings.renderman"}
+                
+for op in remops:
+    removeattrop(op, remops[op])
+
+class Renderman_OT_remove_Attribute(bpy.types.Operator):
+    bl_label = ""
+    bl_idname = "attributes.remove"
+    bl_description = "remove attribute"
+    
+    grp = String()
+    attr = String()
+    path = String()
+    
+    def invoke(self, context, event):
+        try:
+            path = eval(self.path)
+        except:
+            print(self.path)
+            raise
+        grps = path.attribute_groups
+        grp = grps[self.grp]
+        
+        if self.attr != "":
+            for i, a in enumerate(grp.attributes):
+                if a.name == self.attr:
+                    grp.attributes.remove(i)
+        else:
+            for i, g in enumerate(grps):
+                if g.name == self.grp:
+                    grps.remove(i)
+        return {'FINISHED'}
+            
 
 class Renderman_OT_addAttributeGroup(bpy.types.Operator):
     bl_label = "addAttributeGroup"
@@ -1988,42 +2503,50 @@ class Renderman_OT_removeAttribute(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class Renderman_OT_world_attributes_set_as_default(bpy.types.Operator):
-    bl_label = "attributes_world_set_as_default"
-    bl_idname = "attributes.world_set_as_default"
+class Renderman_OT_attributes_set_as_default(bpy.types.Operator):
+    bl_label = "attributes_set_as_default"
+    bl_idname = "attributes.set_as_default"
     bl_description = "set values of all attributes as default for new passes"
 
-    def invoke(self, context, event):
-        rmansettings = context.scene.renderman_settings
-        copy_parameters(rmansettings.attribute_groups, getactivepass(context.scene).attribute_groups, False)
-        return {'FINISHED'}  
-    
-class Renderman_OT_world_attributes_get_default(bpy.types.Operator):
-    bl_label = "get_default_world_attributes"
-    bl_idname = "attributes.world_get_default"
-    bl_description = "get the default values for attributes in active pass"
+    path = String()
 
     def invoke(self, context, event):
         rmansettings = context.scene.renderman_settings
-        copy_parameters(getactivepass(context.scene).attribute_groups, rmansettings.attribute_groups, False)
+        path = eval(self.path)
+        copy_parameters(rmansettings.attribute_groups, path.attribute_groups, False)
+        return {'FINISHED'}  
+    
+class Renderman_OT_attributes_get_default(bpy.types.Operator):
+    bl_label = "get_default_attributes"
+    bl_idname = "attributes.get_default"
+    bl_description = "get the default values for attributes in active pass"
+
+    path = String()
+
+    def invoke(self, context, event):
+        rmansettings = context.scene.renderman_settings
+        path = eval(self.path)
+        copy_parameters(path.attribute_groups, rmansettings.attribute_groups, False)
         return {'FINISHED'}  
     
     
 class Renderman_OT_get_current_attribute_default(bpy.types.Operator):
     bl_label = "get current attribute defaults"
-    bl_idname = "attribute.world_get_default"
+    bl_idname = "attribute.get_default"
     bl_description = "get default value"
     
-    grp_opt = bpy.props.StringProperty(default = "")
+    grp = String()
+    attr = String()
+    path = String()
     
     def invoke(self, context, event):
         rmansettings = context.scene.renderman_settings
-        grp_opt = self.grp_opt
-        grp = grp_opt.split()[0]
-        opt = grp_opt.split()[1]
+        grp = self.grp
+        attr = self.attr
+        path = eval(self.path)
         
-        master_attribute = rmansettings.attribute_groups[grp].attributes[opt]
-        slave_attribute = getactivepass(context.scene).attribute_groups[grp].attributes[opt]
+        master_attribute = rmansettings.attribute_groups[grp].attributes[attr]
+        slave_attribute = path.attribute_groups[grp].attributes[attr]
     
         copy_parameter(slave_attribute, master_attribute)
     
@@ -2031,20 +2554,22 @@ class Renderman_OT_get_current_attribute_default(bpy.types.Operator):
         
 class Renderman_OT_set_current_attribute_default(bpy.types.Operator):
     bl_label = "set current attribute defaults"
-    bl_idname = "attribute.world_set_default"
+    bl_idname = "attribute.set_default"
     bl_description = "set current value as default"
    
     
-    grp_opt = bpy.props.StringProperty(default = "", name="", subtype='NONE')
+    grp = String()
+    attr = String()
+    path = String()
     
     def invoke(self, context, event):
         rmansettings = context.scene.renderman_settings
-        grp_opt = self.grp_opt
-        grp = grp_opt.split()[0]
-        opt = grp_opt.split()[1]
+        grp = self.grp
+        attr = self.attr
+        path = eval(self.path)
         
-        master_attribute = rmansettings.attribute_groups[grp].attributes[opt]
-        slave_attribute = getactivepass(context.scene).attribute_groups[grp].attributes[opt]
+        master_attribute = rmansettings.attribute_groups[grp].attributes[attr]
+        slave_attribute = path.attribute_groups[grp].attributes[attr]
     
         copy_parameter(master_attribute, slave_attribute)    
     
@@ -2052,39 +2577,47 @@ class Renderman_OT_set_current_attribute_default(bpy.types.Operator):
         
 class Renderman_OT_get_attr_group_default(bpy.types.Operator):
     bl_label = "get group defaults"
-    bl_idname = "attribute_group.world_get_default"
+    bl_idname = "attribute_group.get_default"
     bl_description = "get defaults for current group"
     
-    grp = bpy.props.StringProperty()
+    grp = String()
+    path = String()
     
     def invoke(self, context, event):
         rmansettings = context.scene.renderman_settings
         grp = self.grp
+        path = eval(self.path)
         master_group = rmansettings.attribute_groups[grp]
-        slave_group = getactivepass(context.scene).attribute_groups[grp]
-    
+        slave_group = path.attribute_groups[grp]
+        
+        slave_group.export = master_group.export
         for master_attribute in master_group.attributes:
-            slave_attribute = slave_group.attributes[master_attribute.name]
-            copy_parameter(slave_attribute, master_attribute)  
+            if master_attribute.name in slave_group.attributes:
+                slave_attribute = slave_group.attributes[master_attribute.name]
+                copy_parameter(slave_attribute, master_attribute)
     
         return {'FINISHED'}              
             
 class Renderman_OT_set_attr_group_default(bpy.types.Operator):
     bl_label = "set group defaults"
-    bl_idname = "attribute_group.world_set_default"
+    bl_idname = "attribute_group.set_default"
     bl_description = "set defaults for current group"
     
-    grp = bpy.props.StringProperty()
+    grp = String()
+    path = String()
     
     def invoke(self, context, event):
         rmansettings = context.scene.renderman_settings
         grp = self.grp
+        path = eval(self.path)
         master_group = rmansettings.attribute_groups[grp]
-        slave_group = getactivepass(context.scene).attribute_groups[grp]
+        slave_group = path.attribute_groups[grp]
     
+        master_group.export = slave_group.export
         for master_attribute in master_group.attributes:
-            slave_attribute = slave_group.attributes[master_attribute.name]
-            copy_parameter(master_attribute, slave_attribute)                   
+            if master_attribute.name in slave_group.attributes:
+                slave_attribute = slave_group.attributes[master_attribute.name]
+                copy_parameter(master_attribute, slave_attribute)                   
     
         return {'FINISHED'}  
     
@@ -2094,111 +2627,119 @@ class Renderman_OT_set_attr_group_default(bpy.types.Operator):
 #                                           #
 #############################################
 
-class Renderman_OT_object_attributes_set_as_default(bpy.types.Operator):
-    bl_label = "attributes_object_set_as_default"
-    bl_idname = "attributes.object_set_as_default"
-    bl_description = "set values of all attributes as default for new passes"
-
-    def invoke(self, context, event):
-        scene = context.scene
-        rmansettings = context.scene.renderman_settings
-        copy_parameters(rmansettings.attribute_groups, context.object.renderman[getactivepass(scene).name].attribute_groups, False) 
-        return {'FINISHED'}  
+class Renderman_OT_LightLinking_selected(bpy.types.Operator):
+    bl_label = "Link Lights"
+    bl_idname = "renderman.light_linking"
+    bl_description = "Link Lights to Objects"
     
-class Renderman_OT_object_attributes_get_default(bpy.types.Operator):
-    bl_label = "get_default_object_attributes"
-    bl_idname = "attributes.object_get_default"
-    bl_description = "get the default values for attributes in active pass"
-
-    def invoke(self, context, event):
-        scene = context.scene
-        rmansettings = scene.renderman_settings
-        copy_parameters(context.object.renderman[getactivepass(scene).name].attribute_groups, rmansettings.attribute_groups, False)
-        return {'FINISHED'}    
-    
-class Renderman_OT_get_current_obj_attribute_default(bpy.types.Operator):
-    bl_label = "get current attribute defaults"
-    bl_idname = "attribute.obj_get_default"
-    bl_description = "get default value"
-    
-    grp_opt = bpy.props.StringProperty(default = "")
+    type = Enum(items = (   ("add", "add Lights", "add selected lights"),
+                            ("remove", "remove Lights", "remove selected lights"),
+                            ("exclusive", "only selected", "exlusively use selected lights")),
+                default = "add")
     
     def invoke(self, context, event):
-        scene = context.scene
-        rmansettings = context.scene.renderman_settings
-        grp_opt = self.grp_opt
-        grp = grp_opt.split()[0]
-        opt = grp_opt.split()[1]
-        
-        master_attribute = rmansettings.attribute_groups[grp].attributes[opt]
-        slave_attribute = context.object.renderman[getactivepass(scene).name].attribute_groups[grp].attributes[opt]
-    
-        copy_parameter(slave_attribute, master_attribute)
-    
-        return {'FINISHED'}          
-        
-class Renderman_OT_set_current_obj_attribute_default(bpy.types.Operator):
-    bl_label = "set current attribute defaults"
-    bl_idname = "attribute.obj_set_default"
-    bl_description = "set current value as default"
-   
-    
-    grp_opt = bpy.props.StringProperty(default = "", name="", subtype='NONE')
-    
-    def invoke(self, context, event):
-        scene = context.scene
-        rmansettings = context.scene.renderman_settings
-        grp_opt = self.grp_opt
-        grp = grp_opt.split()[0]
-        opt = grp_opt.split()[1]
-        
-        master_attribute = rmansettings.attribute_groups[grp].attributes[opt]
-        slave_option = context.object.renderman[getactivepass(scene).name].attribute_groups[grp].attributes[opt]
-    
-        copy_parameter(master_attribute, slave_attribute)  
-    
-        return {'FINISHED'}          
-        
-class Renderman_OT_get_objattr_group_default(bpy.types.Operator):
-    bl_label = "get group defaults"
-    bl_idname = "attribute_group.obj_get_default"
-    bl_description = "get defaults for current group"
-    
-    grp = bpy.props.StringProperty()
-    
-    def invoke(self, context, event):
-        scene = context.scene
-        rmansettings = context.scene.renderman_settings
-        grp = self.grp
-        master_group = rmansettings.attribute_groups[grp]
-        slave_group = context.object.renderman[getactivepass(scene).name].attribute_groups[grp]
-    
-        for master_attribute in master_group.attributes:
-            slave_attribute = slave_group.attributes[master_attribute.name]
-            copy_parameter(slave_attribute, master_attribute)  
-            
-    
-        return {'FINISHED'}  
+        t = self.type
+        lights = []
+        for l in context.scene.objects:
+            al = False
+            if l.active_material:
+                for rm in l.active_material.renderman:
+                    if rm.arealight_shader != '':
+                        al = True
+            if (l.type == 'LAMP' or al) and l.select:
+                lights.append(l.name)
                 
-class Renderman_OT_set_objattr_group_default(bpy.types.Operator):
-    bl_label = "set group defaults"
-    bl_idname = "attribute_group.obj_set_default"
-    bl_description = "set defaults for current group"
+        for obj in context.scene.objects:
+            if obj.type in ["MESH"] and obj.select:
+                for l in obj.renderman[obj.renderman_index].light_list:
+                    if l.name in lights:
+                        if t in ["add", "exclusive"]:
+                            l.illuminate = True
+                        elif t == "remove":
+                            l.illuminate = False
+                    else:
+                        if t == "exclusive":
+                            l.illuminate = False
+        return {'FINISHED'}
+        
+class Renderman_OT_addAttributeSelected(bpy.types.Operator):
+    bl_label = "add Attribute"
+    bl_idname = "attributes.add_new_selected"
+    bl_description = "add Attribute to selected"
     
-    grp = bpy.props.StringProperty()
+    grp = String()
+    attr = String()
     
-    def invoke(self, context, event):
-        scene = context.scene
-        rmansettings = context.scene.renderman_settings
+    def execute(self, context):
         grp = self.grp
-        master_group = rmansettings.attribute_groups[grp]
-        slave_group = context.object.renderman[getactivepass(scene).name].attribute_groups[grp]
+        attr = self.attr
+        for obj in context.scene.objects:
+            path = 'bpy.context.scene.objects["'+obj.name+'"].renderman'
+            path += '['+path+'_index]'
+            if obj.select:
+                bpy.ops.attributes.add_new(grp = grp, attr = attr, path=path )
+                
+        return {'FINISHED'}
     
-        for master_attribute in master_group.attributes:
-            slave_attribute = slave_group.attributes[master_attribute.name]
-            copy_parameter(master_attribute, slave_attribute)           
+
+class Renderman_OT_changeLinking(bpy.types.Operator):
+    bl_label = ""
+    bl_idname = "renderman.change_pass_linking"
+    bl_description = "change Pass linking"
     
-        return {'FINISHED'}  
+    path = String()
+    type = Enum(items = (   ("all", "All", "all"),
+                            ("none", "None", "none"),
+                            ("active", "Active", "active"),
+                            ("invert", "Invert", "invertcd my")),
+                default = "all")
+                
+    def  invoke(self, context, event):
+        path = eval(self.path)
+        type = self.type
+        curr_pass = path[eval(self.path+'_index')]
+        rm = context.scene.renderman_settings
+    
+        if type == "all":
+            for l in curr_pass.links:
+                curr_pass.links.remove(0)
+            for global_pass in rm.passes:
+                bpy.ops.renderman.link_pass(path = self.path, rpass = global_pass.name)
+            
+        elif type == "none":
+            for l in curr_pass.links:
+                curr_pass.links.remove(0)
+            
+        elif type == "active":
+            bpy.ops.renderman.link_pass(path = self.path, rpass = rm.passes[rm.passes_index].name)
+        
+        elif type == "invert":
+            for global_pass in rm.passes:
+                bpy.ops.renderman.link_pass(path = self.path, rpass = global_pass.name)
+        return {'FINISHED'}
+            
+        
+class Renderman_OT_link_pass(bpy.types.Operator):
+    bl_label = ""
+    bl_idname = "renderman.link_pass"
+    bl_description = "Link/Unlink Object Pass to this Render Pass"
+    
+    rpass = String()
+    path = String()
+    
+    def execute(self, context):
+        rm = context.scene.renderman_settings
+        path = eval(self.path)
+        rpass = self.rpass
+        curr_pass = path[eval(self.path+'_index')]
+        for opass in path:
+            links = opass.links
+            if rpass in links:
+                for i, p in enumerate(links):
+                    if p.name == rpass: links.remove(i)
+            elif opass == curr_pass:
+                links.add().name = rpass
+        return{'FINISHED'} 
     
 #############################################
 #                                           #
@@ -2466,6 +3007,13 @@ class Renderman_OT_addCustomWorldRIBCode(bpy.types.Operator):
 #                                                                                                       #
 #########################################################################################################
 
+def getname(raw, name, pass_name, scene):
+    n = raw.replace('[scene]', scene.name)
+    n = n.replace('[frame]', framepadding(scene))
+    n = n.replace('[name]', name)
+    n = n.replace('[pass]', pass_name)
+    return n
+
 def framepadding(scene):
     currentframe = scene.frame_current
     framestr = str(currentframe)
@@ -2577,20 +3125,8 @@ def addenvironmentmappass(object, texture, scene):
 def addpass(name, scene):
     rmansettings = scene.renderman_settings
     scene_passes = rmansettings.passes
-    
-    def addobjpass(obj):
-        obj.renderman.add().name = name
-        
-        objpass = obj.renderman[name]
-        active_pass = obj.renderman[getactivepass(scene).name]
-        objpass.shadingrate = active_pass.shadingrate
         
     if not name in scene_passes: scene_passes.add().name = name
-
-    for obj in scene.objects:
-        if not name in obj.renderman: addobjpass(obj)
-        if obj.type == "LAMP":
-            if not name in obj.data.renderman: obj.data.renderman.add().name = name
 
 def addshadowmappass(shadowname, name, scene):
     light = scene.objects[name]
@@ -2619,51 +3155,7 @@ def addshadowmappass(shadowname, name, scene):
     shadowpass.lightgroup = ""
     shadowdisplay = shadowpass.displaydrivers['shadowmap01']
     shadowdisplay.displaydriver = maptype[lightsettings.shadowmaptype]
-    
-    
-def maintain_object_passes(obj, scene):
-    for rpass in scene.renderman_settings.passes:
-        if not rpass.name in obj.renderman:
-            obj.renderman.add().name = rpass.name
-    
-    for i, rpass in enumerate(obj.renderman):
-        if not rpass.name in scene.renderman_settings.passes:
-            obj.renderman.remove(i)
-            
-def maintain_light_passes(light, scene):
-    for rpass in scene.renderman_settings.passes:
-        try:
-            if not rpass.name in light.data.renderman:
-                light.data.renderman.add().name = rpass.name
-        except AttributeError:
-            print(light.data)
-        
-    try:
-        for i, rpass in enumerate(light.data.renderman):
-            if not rpass.name in scene.renderman_settings.passes:
-                light.data.renderman.remove(i)
-    except AttributeError:
-        print(light.data)
-            
-def maintain_material_passes(material, scene):
-    for rpass in scene.renderman_settings.passes:
-        if not rpass.name in material.renderman:
-            material.renderman.add().name = rpass.name
-        
-    for i, rpass in enumerate(material.renderman):
-        if not rpass.name in scene.renderman_settings.passes:
-            material.renderman.remove(i)
-            
-def maintain_particle_passes(obj, scene):
-    if obj.particle_systems:
-        for psystem in obj.particle_systems:
-            for rpass in scene.renderman_settings.passes:
-                if not rpass.name in psystem.settings.renderman:
-                    psystem.settings.renderman.add().name = rpass.name
-                
-            for i, rpass in enumerate(psystem.settings.renderman):
-                if not rpass.name in scene.renderman_settings.passes:
-                    psystem.settings.renderman.remove(i)                                 
+                                          
             
 def maintain_display_drivers(current_pass, scene):
     path = getdefaultribpath(scene)
@@ -2810,7 +3302,8 @@ def maintain_searchpaths(current_pass, scene):
         for shader_path in rmansettings.pathcollection.shaderpaths:
             shader_path_value += check_env(shader_path.name)+':'
     else:
-        shader_path_value = ''                              
+        shader_path_value = ''
+    shader_path_value += '@:&'                           
     maintain_searchpath('shader', shader_path_value) 
 
 
@@ -2934,11 +3427,17 @@ def maintain_parameters(master_groups, slave_groups, scene, options = True, obj=
     
 def maintain_beauty_pass(scene):
     renderman_settings = scene.renderman_settings
-    if not scene.renderman_settings.passes:
+    if not "Beauty" in scene.renderman_settings.passes:
         renderman_settings.passes.add().name = "Beauty"
     beauty = renderman_settings.passes['Beauty']
     if not beauty.displaydrivers:
         adddisp(beauty)
+        
+def atleast_one_pass(path):
+    if not path.renderman:
+        path.renderman.add().name = "Beauty"
+    if path.renderman_index == -1 or path.renderman_index > len(path.renderman)-1:
+        path.renderman_index = 0
     
 def maintain_hiders(current_pass, scene):
     rmansettings =  scene.renderman_settings
@@ -2955,31 +3454,7 @@ def maintain_options(current_pass, scene):             ###maintain options for e
     master_groups = rmansettings.option_groups
     slave_groups = current_pass.option_groups
     
-    maintain_parameters(master_groups, slave_groups, scene)
-
-def maintain_world_attributes(current_pass, scene):             ###maintain attributes for every pass
-    rmansettings = scene.renderman_settings
-    master_groups = rmansettings.attribute_groups
-    slave_groups = current_pass.attribute_groups
-    
-    maintain_parameters(master_groups, slave_groups, scene, options=False)                          
-        
-
-def maintain_object_attributes(obj, scene):             ###maintain attributes for every object
-    rmansettings = scene.renderman_settings
-    master_groups = rmansettings.attribute_groups
-    for r in obj.renderman:
-        slave_groups = r.attribute_groups
-        maintain_parameters(master_groups, slave_groups, scene, options=False, obj=True)                                                  
-
-def maintain_particle_attributes(obj, scene):             ###maintain attributes for every object
-    rmansettings = scene.renderman_settings
-    master_groups = rmansettings.attribute_groups
-    if obj.particle_systems:
-        for psystem in obj.particle_systems:
-            for r in psystem.settings.renderman:
-                slave_groups = r.attribute_groups
-                maintain_parameters(master_groups, slave_groups, scene, options=False, obj=True)     
+    maintain_parameters(master_groups, slave_groups, scene)   
 
 def checkForEnvMap(obj, scene):
     env = False
@@ -3008,6 +3483,7 @@ def maintain_environment_map_passes(obj, scene):
     
 def clear_envmap_passes(pass_number, scene):
     ##clear envmap passes when not needed anymore
+    global assigned_shaders
     passes = scene.renderman_settings.passes
 
     if pass_number < len(passes):    
@@ -3024,7 +3500,6 @@ def clear_envmap_passes(pass_number, scene):
                     if item.environment and not env:
                         print("killing envmap pass")
                         passes.remove(pass_number)
-                        global assigned_shaders
                         assigned_shaders = {}
                         pass_number -= 1
     
@@ -3075,132 +3550,146 @@ def maintain_shadowmap_passes(obj, scene):
 
 def maintain_light(light, scene):
     if light.type == "LAMP":
-        maintain_light_passes(light, scene)
-        try:
-            for lpass in light.data.renderman:
-                parameter = lpass.light_shader_parameter
-                active_parameter = light.data.renderman[getactivepass(scene).name].light_shader_parameter
+        
+        global obj_passes, assigned_shaders
+        rm = light.data.renderman
+        if not light.name in obj_passes or len(rm) != obj_passes[light.name]:
+            if light.name in assigned_shaders:
+                lshaders = assigned_shaders[light.name]
+                for l in lshaders:
+                    if not l in rm:
+                        assigned_shaders[light.name].pop(l)
+                        break
+                        
+        for lpass in rm:
+            parameter = lpass.light_shader_parameter
+            active_parameter = light.data.renderman[light.data.renderman_index].light_shader_parameter
+            if lpass.shadowtype == "shadowmap":
+                shadowname = light.name + "_shadowmap"         
+                addshadowmappass(shadowname, light.name, scene)
+                shadowmap_unprocessed = scene.renderman_settings.passes[shadowname].displaydrivers[0].filename
+                shadowmapname = shadowmap_unprocessed.replace("[frame]", framepadding(scene))
+            elif lpass.shadowtype == 'raytrace':
+                shadowname = ""
+                shadowmapname = "raytrace"
+            type = light.data.type
+            
+            if type == "SPOT":
+                if light.data.shadow_method == "BUFFER_SHADOW":
+                    light.data.shadow_buffer_clip_start = light.data.lightsettings.near_clipping
+                    light.data.shadow_buffer_clip_end = light.data.lightsettings.far_clipping
+            
+            lrotx = light.rotation_euler[0]
+            lroty = light.rotation_euler[1]
+            lrotz = light.rotation_euler[2]   
+            topoint = (0, 0, 1)
+            
+            
+            cos = math.cos
+            sin = math.sin
+            abs = math.fabs
+            radians = math.radians
+            
+            
+            def maintainitem(name, value):
+                if name in parameter:
+                    active_parameter = parameter[name]
+                    type = active_parameter.parametertype
+                    if not active_parameter.free:
+                        if type == "color":
+                            active_parameter.colorparameter = value
+                        elif type == "float":
+                            if active_parameter.vector_size == 1:
+                                active_parameter.float_one[0] = value
+                            elif active_parameter.vector_size == 3:
+                                active_parameter.float_three[0] = value[0]
+                                active_parameter.float_three[1] = value[1]
+                                active_parameter.float_three[2] = value[2]
+                        elif type == "integer":
+                            active_parameter.int_one[0] = value
+                        elif type == "string":                                       
+                            active_parameter.textparameter = value
+            
+            chsh = checkshaderparameter
+            
+            mappings = scene.renderman_settings.mappings
+            
+            if type == 'POINT':
+                dirs = ["px", "nx", "py", "ny", "pz", "nz"]
                 if lpass.shadowtype == "shadowmap":
-                    shadowname = light.name + "_shadowmap"         
-                    addshadowmappass(shadowname, light.name, scene)
-                    shadowmap_unprocessed = scene.renderman_settings.passes[shadowname].displaydrivers[0].filename
-                    shadowmapname = shadowmap_unprocessed.replace("[frame]", framepadding(scene))
-                elif lpass.shadowtype == 'raytrace':
-                    shadowname = ""
-                    shadowmapname = "raytrace"
-                type = light.data.type
-                
-                if type == "SPOT":
-                    if light.data.shadow_method == "BUFFER_SHADOW":
-                        light.data.shadow_buffer_clip_start = light.data.lightsettings.near_clipping
-                        light.data.shadow_buffer_clip_end = light.data.lightsettings.far_clipping
-                
-                lrotx = light.rotation_euler[0]
-                lroty = light.rotation_euler[1]
-                lrotz = light.rotation_euler[2]   
-                topoint = (0, 0, 1)
-                
-                
-                cos = math.cos
-                sin = math.sin
-                abs = math.fabs
-                radians = math.radians
-                
-                
-                def maintainitem(name, value):
-                    if name in parameter:
-                        active_parameter = parameter[name]
-                        type = active_parameter.parametertype
-                        if not active_parameter.free:
-                            if type == "color":
-                                active_parameter.colorparameter = value
-                            elif type == "float":
-                                if active_parameter.vector_size == 1:
-                                    active_parameter.float_one[0] = value
-                                elif active_parameter.vector_size == 3:
-                                    active_parameter.float_three[0] = value[0]
-                                    active_parameter.float_three[1] = value[1]
-                                    active_parameter.float_three[2] = value[2]
-                            elif type == "integer":
-                                active_parameter.int_one[0] = value
-                            elif type == "string":                                       
-                                active_parameter.textparameter = value
-                
-                chsh = checkshaderparameter
-                
-                mappings = scene.renderman_settings.mappings
-                
-                if type == 'POINT':
-                    dirs = ["px", "nx", "py", "ny", "pz", "nz"]
-                    if lpass.shadowtype == "shadowmap":
-                        if not lpass.customshader:
-                            lpass.shaderpath = mappings.shadowpointshader
-                        chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                        for dir in dirs:
-                            maintainitem(mappings.point_shadowpref+dir, shadowmapname.replace("[dir]", dir))
-                    elif lpass.shadowtype == "raytrace":
-                        if not lpass.customshader:
-                            lpass.shaderpath = mappings.shadowpointshader
-                        chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                        for dir in dirs:
-                            maintainitem(mappings.point_shadowpref+dir, "raytrace")
-                    else:
-                        if not lpass.customshader:
-                            lpass.shaderpath = mappings.pointshader
-                        chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                    if "lightcolor" in active_parameter:
-                        light.data.color = active_parameter["lightcolor"].colorparameter
-                    if "intensity" in active_parameter:
-                        light.data.energy = active_parameter["intensity"].float_one[0]
-                
-                elif type == 'SPOT':
-                    if lpass.shadowtype == "shadowmap" or lpass.shadowtype == "raytrace":
-                        if not lpass.customshader:
-                            lpass.shaderpath = mappings.shadowspotshader
-                        chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                        maintainitem(mappings.shadowmap, shadowmapname.replace("[dir]", ""))
-                    else:
-                        if not lpass.customshader:
-                            lpass.shaderpath = mappings.spotshader
-                        chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                    if "lightcolor" in active_parameter:
-                        light.data.color = active_parameter["lightcolor"].colorparameter
-                    if "intensitiy" in active_parameter:
-                        light.data.energy = active_parameter["intensity"].float_one[0]
-                    if "coneangle" in active_parameter:
-                        if active_parameter["coneangle"].float_one[0] <= 0:
-                            active_parameter["coneangle"].float_one[0] = radians(1)
-                        light.data.spot_size = active_parameter["coneangle"].float_one[0]
-                    if "conedeltaangle" in active_parameter:
-                        light.data.spot_blend = active_parameter["conedeltaangle"].float_one[0]/active_parameter["coneangle"].float_one[0]
-                    maintainitem("to", [0, 0, -1])
-                    maintainitem("from", [0, 0, 0])                
-                
-                elif type == 'SUN':
-                    if lpass.shadowtype == "shadowmap":
-                        if not lpass.customshader:
-                            lpass.shaderpath = mappings.shadowdistantshader
-                        chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                        maintainitem(mappings.shadowmap, shadowmapname)
-                    elif lpass.shadowtype == "raytrace":
-                        maintainitem(mappings.shadowmap, "raytrace")
-                    else:
-                        if not lpass.customshader:
-                            lpass.shaderpath = mappings.distantshader
-                        chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                    if "lightcolor" in active_parameter:
-                        light.data.color = active_parameter["lightcolor"].colorparameter
-                    if "intensity" in active_parameter:
-                        light.data.energy = active_parameter["intensity"].float_one[0]
-                    maintainitem("to", [0, 0, -1])     
-                    maintainitem("from", [0, 0, 0])    
-        except AttributeError:
-            print(light.data)                   
+                    if not lpass.customshader:
+                        lpass.shaderpath = mappings.shadowpointshader
+                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
+                    for dir in dirs:
+                        maintainitem(mappings.point_shadowpref+dir, shadowmapname.replace("[dir]", dir))
+                elif lpass.shadowtype == "raytrace":
+                    if not lpass.customshader:
+                        lpass.shaderpath = mappings.shadowpointshader
+                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
+                    for dir in dirs:
+                        maintainitem(mappings.point_shadowpref+dir, "raytrace")
+                else:
+                    if not lpass.customshader:
+                        lpass.shaderpath = mappings.pointshader
+                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
+                if "lightcolor" in active_parameter:
+                    light.data.color = active_parameter["lightcolor"].colorparameter
+                if "intensity" in active_parameter:
+                    light.data.energy = active_parameter["intensity"].float_one[0]
+            
+            elif type == 'SPOT':
+                if lpass.shadowtype == "shadowmap" or lpass.shadowtype == "raytrace":
+                    if not lpass.customshader:
+                        lpass.shaderpath = mappings.shadowspotshader
+                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
+                    maintainitem(mappings.shadowmap, shadowmapname.replace("[dir]", ""))
+                else:
+                    if not lpass.customshader:
+                        lpass.shaderpath = mappings.spotshader
+                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
+                if "lightcolor" in active_parameter:
+                    light.data.color = active_parameter["lightcolor"].colorparameter
+                if "intensitiy" in active_parameter:
+                    light.data.energy = active_parameter["intensity"].float_one[0]
+                if "coneangle" in active_parameter:
+                    if active_parameter["coneangle"].float_one[0] <= 0:
+                        active_parameter["coneangle"].float_one[0] = radians(1)
+                    light.data.spot_size = active_parameter["coneangle"].float_one[0]
+                if "conedeltaangle" in active_parameter:
+                    light.data.spot_blend = active_parameter["conedeltaangle"].float_one[0]/active_parameter["coneangle"].float_one[0]
+                maintainitem("to", [0, 0, -1])
+                maintainitem("from", [0, 0, 0])                
+            
+            elif type == 'SUN':
+                if lpass.shadowtype == "shadowmap":
+                    if not lpass.customshader:
+                        lpass.shaderpath = mappings.shadowdistantshader
+                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
+                    maintainitem(mappings.shadowmap, shadowmapname)
+                elif lpass.shadowtype == "raytrace":
+                    maintainitem(mappings.shadowmap, "raytrace")
+                else:
+                    if not lpass.customshader:
+                        lpass.shaderpath = mappings.distantshader
+                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
+                if "lightcolor" in active_parameter:
+                    light.data.color = active_parameter["lightcolor"].colorparameter
+                if "intensity" in active_parameter:
+                    light.data.energy = active_parameter["intensity"].float_one[0]
+                maintainitem("to", [0, 0, -1])     
+                maintainitem("from", [0, 0, 0])                       
 
-def maintain_passes(obj, scene):
-    if obj.type == "LAMP": maintain_light_passes(obj, scene)
-    maintain_object_passes(obj, scene)
-    maintain_particle_passes(obj, scene)
+def objpass(p):
+    if len(p.renderman) == 0:
+        p.renderman.add().name = 'Beauty'
+    if p.renderman_index < 0 or p.renderman_index >= len(p.renderman):
+        p.renderman_index = len(p.renderman)-1
+    return p.renderman[p.renderman_index]
+
+def linked_pass(p, rpass):
+    for lp in p.renderman:
+        if rpass.name in lp.links:
+            return lp
 
 def maintain_lists(scene):
     global light_list, objects_size
@@ -3210,7 +3699,8 @@ def maintain_lists(scene):
                 if not obj.type == 'LAMP':
                     al = False
                     if obj.active_material:
-                        if obj.active_material.renderman[getactivepass(scene).name].arealight_shader != "":
+                        m = obj.active_material
+                        if objpass(m).arealight_shader != "":
                             al = True
                 if (obj.type == 'LAMP' or al) and not obj.name in light_list:
                     light_list.append(obj.name)
@@ -3228,30 +3718,29 @@ def maintain(scene):
         checkshadercollection(scene)
     
     maintain_beauty_pass(scene)
-
-    for mat in bpy.data.materials:
-        maintain_material_passes(mat, scene) 
     
     maintain_lists(scene)          
 
     for i, rpass in enumerate(scene.renderman_settings.passes):
         maintain_display_drivers(rpass, scene)
-        maintain_options(rpass, scene)
+#        maintain_options(rpass, scene)
         maintain_hiders(rpass, scene)
-        maintain_world_attributes(rpass, scene)
  #       create_render_layers(rpass, scene)
         maintain_searchpaths(rpass, scene) 
         i = clear_envmap_passes(i, scene)  
     
     for obj in scene.objects:
-        maintain_passes(obj, scene)
-        maintain_object_attributes(obj, scene)
-        maintain_particle_attributes(obj, scene)        
+        atleast_one_pass(obj)    
         if obj.type == 'LAMP':
+            atleast_one_pass(obj.data)
             maintain_shadowmap_passes(obj, scene)
             maintain_light(obj, scene)       
 
         else:
+            for ps in obj.particle_systems:
+                atleast_one_pass(ps.settings)
+            for m in obj.material_slots:
+                atleast_one_pass(m.material)
             update_illuminate_list(obj, scene)
             maintain_environment_map_passes(obj, scene)
             
@@ -3445,11 +3934,6 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
                 
     def check_curr_shader(current_shader):
         if not active_pass.name in current_shader or current_shader[active_pass.name] != shader:
-            print("something else has changed")
-            try:
-                print(current_shader[active_pass.name], shader)
-            except KeyError:
-                print("pass wieder rausgeschmissen")
             readparms()
             current_shader[active_pass.name] = shader
         return current_shader
@@ -3483,11 +3967,9 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
             file = open(fulltmpname, "w")
             subprocess.Popen([shadinfo, fullshaderpath], stdout=file).communicate()
             file.close()
-            print("shader has changed")
             readparms()
             
         if not identifier in assigned_shaders or assigned_shaders[identifier] != check_curr_shader(assigned_shaders[identifier]):
-            print("immer??")
             cs = check_curr_shader({})
             assigned_shaders[identifier] = cs
                 
@@ -3608,7 +4090,26 @@ def motionblur(motion_samples, current_pass, scene):
             addtosample = round((shutterspeed/motion_samples)*i)
             sampletime.append(addtosample)        
     return shutterspeed, sampletime    
-    
+
+
+def ribarchive(rs, objname, folder, write, current_pass, scene, func, *args, **keys):
+    rib_name = getname(rs.filename, objname, current_pass.name, scene)+'.rib'
+    path = os.path.join(getdefaultribpath(scene), folder)
+    if not os.path.exists(path):
+        os.mkdir(path)
+    rib_file = os.path.join(path, rib_name)
+    if rs.own_file:
+        if not rs.overwrite or not os.path.exists(rib_file):
+            file = open(rib_file, "w")
+            awrite = file.write
+            write('ReadArchive "'+rib_file)
+    else: awrite = write
+    func(awrite, current_pass, scene, *args, **keys)
+    try:
+        file.close()
+    except:
+        pass
+
 #############################################
 #                                           #
 #   Write Render Settings                   #
@@ -3635,12 +4136,9 @@ def prepare_textures(textures, scene):
     
     os.system('"'+scene.renderman_settings.renderexec+'" "'+texturerib+'"')
                     
-def writeSettings(current_pass, write, scene, dir = ""):
+def writeSettings(write, current_pass, scene, camrot, dir = ""):
     print("write Scene Settings ...")
 
-
-    render = scene.render
-    path = scene.renderman_settings.ribpath
     if not current_pass.displaydrivers:
         nodisplay = True
     else:
@@ -3652,6 +4150,11 @@ def writeSettings(current_pass, write, scene, dir = ""):
    
 
     respercentage = render.resolution_percentage
+
+    if current_pass.camera_object != "":
+        camera = scene.objects[current_pass.camera_object]
+    else:
+        camera = scene.camera
 
     if current_pass.shadow:
         light = scene.objects[current_pass.camera_object]    
@@ -3783,6 +4286,10 @@ def writeSettings(current_pass, write, scene, dir = ""):
             write(code.name + '\n')
 
     print("Done")
+    
+### Camera
+    if current_pass.displaydrivers:
+        writeCamera(write, current_pass, scene, camera, camrot)    
 
 
 #############################################
@@ -3798,7 +4305,7 @@ def round(float):
         integer = math.floor(float)
     return integer 
 
-def objtransform(obj, write, current_pass, scene, mx = None):
+def objtransform(write, current_pass, scene, obj, mx = None):
     def writetransform(matrix):
         write('ConcatTransform [\t')    
         for i, row in enumerate(matrix):
@@ -3813,8 +4320,8 @@ def objtransform(obj, write, current_pass, scene, mx = None):
     if mx: matrix = mx
     else: matrix = obj.matrix_world
         
-    if obj.renderman[current_pass.name].transformation_blur:
-        motion_samples = obj.renderman[current_pass.name].motion_samples
+    if obj and linked_pass(obj, current_pass).transformation_blur:
+        motion_samples = linked_pass(obj, current_pass).motion_samples
         current_frame = scene.frame_current  
         shutterspeed, sampletime = motionblur(motion_samples, current_pass, scene)
     
@@ -3830,7 +4337,7 @@ def objtransform(obj, write, current_pass, scene, mx = None):
     else: writetransform(matrix) 
 
 
-def writeCamera(current_pass, cam, camrot, write, scene):
+def writeCamera(write, current_pass, scene, cam, camrot):
     degrees = math.degrees
     print("write Camera Settings ...")
     
@@ -3890,8 +4397,8 @@ def writeCamera(current_pass, cam, camrot, write, scene):
 
     ##perspective blur
     sampletime = []
-    if cam.renderman[current_pass.name].perspective_blur:
-        motion_samples = cam.renderman[current_pass.name].motion_samples
+    if linked_pass(cam, current_pass).perspective_blur:
+        motion_samples = linked_pass(cam, current_pass).motion_samples
         current_frame = scene.frame_current  
         shutterspeed, sampletime = motionblur(motion_samples, current_pass, scene)
     
@@ -3916,8 +4423,8 @@ def writeCamera(current_pass, cam, camrot, write, scene):
     ##Camera Transformation Blur
     def camtransblur(trans):
         sampletime = []
-        if cam.renderman[current_pass.name].transformation_blur:
-            motion_samples = cam.renderman[current_pass.name].motion_samples
+        if linked_pass(cam, current_pass).transformation_blur:
+            motion_samples = linked_pass(cam, current_pass).motion_samples
             current_frame = scene.frame_current  
             shutterspeed, sampletime = motionblur(motion_samples, current_pass, scene)
         
@@ -3950,8 +4457,9 @@ def writeCamera(current_pass, cam, camrot, write, scene):
 #############################################
 
 
-def writeWorld(current_pass, write, path, scene):    
+def writeWorld(write, current_pass, scene):    
     global_shader = current_pass.global_shader
+
     write("WorldBegin\n")
     write_attrs_or_opts(current_pass.attribute_groups, write, "Attribute", "", scene)
     write('\n\n')
@@ -3978,13 +4486,15 @@ def writeWorld(current_pass, write, path, scene):
         lights = scene.objects
 
     if lights:
-        [writeLight(light, write, current_pass, path, scene) for light in lights]
+        for light in lights:
+            writeLight(write, current_pass, scene, light)
         write('\n')
         for light in lights:
             al = False
             if light.type != 'LAMP':
-                if light.active_material:
-                    if light.active_material.renderman[current_pass.name].arealight_shader != "":
+                m = light.active_material
+                if m:
+                    if linked_pass(m, current_pass).arealight_shader != "":
                         al = True
             if light.type == 'LAMP' or al:
                 write('Illuminate "'+light.name+'" 1\n')
@@ -3994,8 +4504,8 @@ def writeWorld(current_pass, write, path, scene):
     if objects:
         for obj in objects:
             if not obj.hide_render and not obj.name == current_pass.camera_object and check_visible(obj, scene):
-                writeObject(path, obj, current_pass, write, scene)
-                writeParticles(path, obj, current_pass, write, scene)                 
+                writeObject(write, current_pass, scene, obj)
+                writeParticles(write, current_pass, scene, path, obj)                 
     write("WorldEnd\n")
 
 
@@ -4006,12 +4516,12 @@ def writeWorld(current_pass, write, path, scene):
 #############################################
 
 
-def writeLight(light, write, current_pass, path, scene):
+def writeLight(write, current_pass, scene, light):
     rmansettings = scene.renderman_settings
     al = False
     if light.type != 'LAMP' and light.active_material:
         mat = light.active_material
-        alshader = light.active_material.renderman[current_pass.name].arealight_shader
+        alshader = linked_pass(mat, current_pass).arealight_shader
         if alshader != "":
             al = True
         
@@ -4024,32 +4534,30 @@ def writeLight(light, write, current_pass, path, scene):
             rotz = str(math.degrees(light.rotation_euler.z))          
     
             write("\nAttributeBegin\n")      
-
+            write_attrs_or_opts(linked_pass(light, current_pass).attribute_groups, write, "Attribute", "", scene)
             objtransform(light, write, current_pass, scene)
             if al:
-                write_attrs_or_opts(light.renderman[current_pass.name].attribute_groups, write, "Attribute", "")
                 write('AreaLightSource ')
-                parameterlist = light.active_material.renderman[current_pass.name].light_shader_parameter
+                parameterlist = linked_pass(mat, current_pass).light_shader_parameter
                 write('"'+alshader.replace("."+rmansettings.shaderbinary, "")+'" "'+light.name+'" ')
                 writeshaderparameter(parameterlist, write)
                 write('\n')
                 export_type = light.data.export_type
-                meshpath = os.path.join(path, scene.renderman_settings.polydir)
                 
                 if light.data.show_double_sided:
                     write('Sides 2\n')
                     
-                if mat: write(writeMaterial(mat, path, current_pass, scene))
+                if mat: write(writeMaterial(write, current_pass, scene, mat))
                 
                 if export_type == 'ObjectInstance':
                     write('ObjectInstance "'+light.data.name+'"\n')
                 else:
-                    export_object(light, current_pass, meshpath, write, export_type, scene)
+                    export_object(write, current_pass, scene, light, export_type)
                 exported_children.append(light.name)
             else:
                 write('LightSource ')
-                parameterlist = light.data.renderman[current_pass.name].light_shader_parameter
-                write('"'+light.data.renderman[current_pass.name].shaderpath.replace("."+rmansettings.shaderbinary, "")+'" "'+light.name+'" ')         
+                parameterlist = linked_pass(light.data, current_pass).light_shader_parameter
+                write('"'+linked_pass(light.data, current_pass).shaderpath.replace("."+rmansettings.shaderbinary, "")+'" "'+light.name+'" ')         
                 writeshaderparameter(parameterlist, write, scene)
                 write('\n')
 
@@ -4070,31 +4578,25 @@ def writeshader(shader, parms, type, write, scene):
         writeshaderparameter(parms, write, scene)
         write('\n')             
 
-def writeMaterial(mat, path, current_pass, scene):
+def writeMaterial(write, current_pass, scene, mat):
     rmansettings = scene.renderman_settings
-    matpath = os.path.join(path, "Materials")
-    if not os.path.exists(matpath): os.mkdir(matpath)
-    matfilename = mat.name + '_' + current_pass.name + ".rib"
-    matfilepath = os.path.join(matpath, matfilename)
-    matfile = open(matfilepath, "w")
-    write = matfile.write 
     
     ## Color & Opacity Motion Blur
     def writeColor():  
-        colR = mat.renderman[current_pass.name].color.r
-        colG = mat.renderman[current_pass.name].color.g
-        colB = mat.renderman[current_pass.name].color.b
+        colR = linked_pass(mat, current_pass).color.r
+        colG = linked_pass(mat, current_pass).color.g
+        colB = linked_pass(mat, current_pass).color.b
         write('Color ['+str(colR)+' '+str(colG)+' '+str(colB)+']\n')
        
     def writeOpacity():
-        opR, opG, opB = mat.renderman[current_pass.name].opacity    
+        opR, opG, opB = linked_pass(mat, current_pass).opacity    
         write('Opacity ['+str(opR)+' '+str(opG)+' '+str(opB)+']\n')
         
 
 
     def matblur(function, args=[]):     
         sampletime = [] 
-        motion_samples = mat.renderman[current_pass.name].motion_samples
+        motion_samples = linked_pass(mat, current_pass).motion_samples
         current_frame = scene.frame_current  
         shutterspeed, sampletime = motionblur(motion_samples, current_pass, scene)
         
@@ -4112,26 +4614,26 @@ def writeMaterial(mat, path, current_pass, scene):
             if args: function(args[0], args[1], args[2], args[3], args[4])
             else: function()
 
-    if mat.renderman[current_pass.name].color_blur:                
+    if linked_pass(mat, current_pass).color_blur:                
         matblur(writeColor)
     else:
         writeColor()
         
-    if mat.renderman[current_pass.name].opacity_blur:        
+    if linked_pass(mat, current_pass).opacity_blur:        
         matblur(writeOpacity)
     else:
         writeOpacity()
 
-    surface_shader = mat.renderman[current_pass.name].surface_shader
-    surface_parameter = mat.renderman[current_pass.name].surface_shader_parameter 
-    displacement_shader = mat.renderman[current_pass.name].displacement_shader
-    displacement_parameter = mat.renderman[current_pass.name].disp_shader_parameter 
-    interior_shader = mat.renderman[current_pass.name].interior_shader
-    interior_parameter = mat.renderman[current_pass.name].interior_shader_parameter
-    exterior_shader = mat.renderman[current_pass.name].exterior_shader
-    exterior_parameter = mat.renderman[current_pass.name].exterior_shader_parameter    
+    surface_shader = linked_pass(mat, current_pass).surface_shader
+    surface_parameter = linked_pass(mat, current_pass).surface_shader_parameter 
+    displacement_shader = linked_pass(mat, current_pass).displacement_shader
+    displacement_parameter = linked_pass(mat, current_pass).disp_shader_parameter 
+    interior_shader = linked_pass(mat, current_pass).interior_shader
+    interior_parameter = linked_pass(mat, current_pass).interior_shader_parameter
+    exterior_shader = linked_pass(mat, current_pass).exterior_shader
+    exterior_parameter = linked_pass(mat, current_pass).exterior_shader_parameter    
   
-    if mat.renderman[current_pass.name].shader_blur:
+    if linked_pass(mat, current_pass).shader_blur:
         matblur(writeshader, args=[surface_shader, surface_parameter, "Surface", write, scene])
         matblur(writeshader, args=[displacement_shader, displacement_parameter, "Displacement", write, scene])
         matblur(writeshader, args=[interior_shader, interior_parameter, "Interior", write, scene])
@@ -4151,10 +4653,10 @@ def writeMaterial(mat, path, current_pass, scene):
 #############################################
 
 
-def writeParticles(path, obj, current_pass, write, scene):
+def writeParticles(write, current_pass, scene, obj):
     rmansettings = scene.renderman_settings
     pfiles = []
-    
+
     if len(obj.particle_systems) > 0:
         for psystem in obj.particle_systems:
             if psystem.settings.type == 'EMITTER':
@@ -4169,7 +4671,7 @@ def writeParticles(path, obj, current_pass, write, scene):
                 file = open(part_path, "w")
                 pwrite = file.write
                 
-                rman = psystem.settings.renderman[current_pass.name]
+                rman = linked_pass(psystem.settings, current_pass)
             
                 ## Points
                 if rman.render_type == "Points":
@@ -4198,35 +4700,64 @@ def writeParticles(path, obj, current_pass, write, scene):
                     
                 ## Objects
                 elif rman.render_type == "Object":
-                    for part in psystem.particles:
-                        obj = scene.objects[rman.object]
-                        
+                    part_obj = scene.objects[rman.object]
+                    def transform(part):          
                         mx_new = mathutils.Matrix()
                         trans = part.location
                         mx_trans = mx_new.Translation(trans)
                         mx_rot = part.rotation.to_matrix().to_4x4()
                         mx_scale = mx_new.Scale(part.size, 4)
                         mx = mx_trans * mx_scale * mx_rot
-                        pwrite('AttributeBegin\n')
-                        objtransform(psystem.settings, pwrite, current_pass, scene, mx = mx)
-                        
-                        writeObject(path, obj, current_pass, pwrite, scene) 
-                        pwrite('AttributeEnd\n')                         
-                
-        write("\nAttributeBegin\n")
-        write('Attribute "identifier" "name" ["'+obj.name+'_particles"]\n')
-        write_attrs_or_opts(obj.renderman[current_pass.name].attribute_groups, write, "Attribute", "", scene)
-    
-        if not current_pass.shadow:
-            for item in obj.renderman[current_pass.name].light_list:
-                if not item.illuminate:
-                    write('Illuminate "'+item.lightname+'"')
-                    write(' 0\n')
+                        return mx
+        
+                    matrices = []
+                    if linked_pass(psystem.settings, current_pass).motion_blur and current_pass.motionblur:
+                        motion_samples = linked_pass(psystem.settings, current_pass).motion_samples
+                        current_frame = scene.frame_current  
+                        shutterspeed, sampletime = motionblur(motion_samples, current_pass, scene)
                     
-        for p in pfiles:
-            write('ReadArchive "'+p.replace('\\', '\\\\')+'"\n')
-            
-        write('AttributeEnd\n')
+                        for s in sampletime:
+                            scene.frame_set(current_frame - (shutterspeed - s))
+                            mx_set = []
+                            for i, part in enumerate(psystem.particles):
+                                mx_set.append(transform(part))
+                            matrices.append([mx_set, scene.frame_current])                    
+                    
+                    for i, part in enumerate(psystem.particles):
+                        if scene.frame_current >= part.birth_time:
+                            pwrite('AttributeBegin\n')
+                            
+                            if len(matrices) > 1:
+                                pwrite('MotionBegin[')
+                                motion_samples = linked_pass(psystem.settings, current_pass).motion_samples
+                                shutterspeed, sampletime = motionblur(motion_samples, current_pass, scene)
+                                for s in sampletime:
+                                    pwrite(str(s)+' ')
+                                pwrite(']\n')
+                            
+                                for mx_set in matrices:
+                                    objtransform(None, pwrite, current_pass, scene, mx = mx_set[0][i])
+                                    pwrite('## '+str(mx_set[1])+'\n')
+                                pwrite('MotionEnd\n')
+                            else:
+                                objtransform(None, pwrite, current_pass, scene, mx = transform(part))
+                                                        
+                            writeObject(pwrite, current_pass, scene, part_obj) 
+                        
+                            pwrite('AttributeEnd\n')  
+                            
+                    write("\nAttributeBegin\n")
+                    write('Attribute "identifier" "name" ["'+obj.name+'_particles"]\n')
+                    write_attrs_or_opts(linked_pass(obj, current_pass).attribute_groups, write, "Attribute", "", scene)
+                
+                    if not current_pass.shadow:
+                        for item in linked_pass(obj, current_pass).light_list:
+                            if not item.illuminate:
+                                write('Illuminate "'+item.lightname+'"')
+                                write(' 0\n')
+                    for p in pfiles:
+                        write('ReadArchive "'+p.replace('\\', '\\\\')+'"\n')                        
+                    write('AttributeEnd\n')
 
 #############################################
 #                                           #
@@ -4234,9 +4765,8 @@ def writeParticles(path, obj, current_pass, write, scene):
 #                                           #
 #############################################
     
-def writeObject(path, obj, current_pass, write, scene):
+def writeObject(write, current_pass, scene, obj):
     if obj.type in ['MESH']:                
-        print("write "+obj.name)
 
         mat = obj.active_material            
         
@@ -4245,10 +4775,10 @@ def writeObject(path, obj, current_pass, write, scene):
             write('#child of '+obj.parent.name+'\n')
         write("AttributeBegin\n")
         write('Attribute "identifier" "name" ["'+obj.name+'"]\n')
-        write_attrs_or_opts(obj.renderman[current_pass.name].attribute_groups, write, "Attribute", "", scene)
+        write_attrs_or_opts(linked_pass(obj, current_pass).attribute_groups, write, "Attribute", "", scene)
 
         if not current_pass.shadow:
-            for item in obj.renderman[current_pass.name].light_list:
+            for item in linked_pass(obj, current_pass).light_list:
                 if not item.illuminate:
                     write('Illuminate "'+item.lightname+'"')
                     write(' 0\n')
@@ -4256,21 +4786,20 @@ def writeObject(path, obj, current_pass, write, scene):
         objtransform(obj, write, current_pass, scene)
         rmansettings = scene.renderman_settings
 
-        if mat: write(writeMaterial(mat, path, current_pass, scene).replace('\\', '\\\\'))
+        if mat: write(writeMaterial(write, current_pass, scene, mat).replace('\\', '\\\\'))
         
         if obj.data.show_double_sided:
             write('Sides 2\n')
             
-        write('ShadingRate '+str(obj.renderman[current_pass.name].shadingrate)+'\n')
+        write('ShadingRate '+str(linked_pass(obj, current_pass).shadingrate)+'\n')
         
         export_type = obj.data.export_type
         meshpath = os.path.join(path, scene.renderman_settings.polydir)
         if export_type == 'ObjectInstance':
             write('ObjectInstance "'+obj.data.name+'"\n')
         else:
-            export_object(obj, current_pass, meshpath, write, scene, export_type)
+            export_object(write, current_pass, scene, obj, export_type)
         write("AttributeEnd\n\n")
-        print("Done")
 
 
 #############################################
@@ -4280,7 +4809,7 @@ def writeObject(path, obj, current_pass, write, scene):
 #############################################
 
 
-def writeMesh(mesh, path, scene):
+def writeMesh(write, current_pass, scene, mesh):
     subsurf = False
     ptype = mesh.data.primitive_type
     if ptype == 'SubdivisionMesh': subsurf = True
@@ -4394,7 +4923,7 @@ def writeMesh(mesh, path, scene):
 #                                           #
 #############################################
 
-def export_object(obj, current_pass, path, write, scene, type = "ReadArchive"):    
+def export_object(write, current_pass, scene, obj, type = "ReadArchive"):    
     
     if type == 'ObjectInstance':
         inst = True
@@ -4409,8 +4938,8 @@ def export_object(obj, current_pass, path, write, scene, type = "ReadArchive"):
     
     ##deformation blur
     sampletime = []
-    if obj.renderman[current_pass.name].deformation_blur:
-        motion_samples = obj.renderman[current_pass.name].motion_samples
+    if linked_pass(obj, current_pass).deformation_blur:
+        motion_samples = linked_pass(obj, current_pass).motion_samples
         current_frame = scene.frame_current  
         shutterspeed, sampletime = motionblur(motion_samples, current_pass, scene)
         
@@ -4421,7 +4950,7 @@ def export_object(obj, current_pass, path, write, scene, type = "ReadArchive"):
             write(']\n')
             for s in sampletime:
                 scene.frame_set(current_frame - (shutterspeed - s))
-                fullath = writeMesh(obj, path, scene)
+                fullath = writeMesh(write, current_pass, scene, obj)
                 if type in ['ObjectInstance', 'ReadArchive']:
                     write('ReadArchive "'+fullpath.replace('\\', '\\\\')+'"\n')
                 else:             
@@ -4433,7 +4962,7 @@ def export_object(obj, current_pass, path, write, scene, type = "ReadArchive"):
         write('MotionEnd\n')
                    
     else:
-        fullpath = writeMesh(obj, path, scene)               
+        fullpath = writeMesh(write, current_pass, scene, obj)               
         if type in ['ObjectInstance', 'ReadArchive']:
             write('ReadArchive "'+fullpath.replace('\\', '\\\\')+'"\n')
         else:             
@@ -4462,7 +4991,7 @@ def export(current_pass, path, scene):
             filepath = os.path.join(path, name)
             file = open(filepath, "w")
             write = file.write
-            writerib(current_pass, write, path, camera, camrot, scene, dir)
+            writerib(write, current_pass, scene, camera, camrot, dir = dir)
             file.close()
             invoke_renderer(filepath, scene)
             
@@ -4475,6 +5004,10 @@ def export(current_pass, path, scene):
             camera = scene.objects[current_pass.camera_object]
         else:
             camera = scene.camera
+            if camera == None:
+                print("No Camera Selected")
+                return
+            
         rot = camera.rotation_euler    
         name = current_pass.name+framepadding(scene)
         camrot = [degrees(rot[0]), degrees(rot[1]), degrees(rot[2])]    
@@ -4482,23 +5015,45 @@ def export(current_pass, path, scene):
         filename = name+".rib"
         file = open(os.path.join(path, filename), "w")   
         write = file.write
-        writerib(current_pass, write, path, camera, camrot, scene, dir = "")
+        writerib(write, current_pass, scene, camera, camrot, dir = "")
         file.close()
-    
+
+
+def getfinalpath(subfolder, scene):
+    return os.path.join(getdefaultribpath(scene), subfolder)
+
     #Write RIB Files
-def writerib(current_pass, write, path, camera, camrot, scene, dir = ""):
+def writerib(write, current_pass, scene, camera, camrot, dir = ""):
+    rm = scene.renderman_settings
     global exported_children
     exported_children = []
     for obj in scene.objects:
         if obj.type in ['MESH']:
-            meshpath = os.path.join(path, scene.renderman_settings.polydir)
             if obj.data.export_type == 'ObjectInstance':
-                export_object(obj, current_pass, meshpath, write, scene, obj.data.export_type)  
-    writeSettings(current_pass, write, dir = dir, scene = scene)
+                export_object(write, current_pass, scene, obj, type = obj.data.export_type)
+    
+    rm = scene.renderman_settings
+    rs = rm.settings_rib_structure
 
-    if current_pass.displaydrivers:
-        writeCamera(current_pass, camera, camrot, write, scene)
-    writeWorld(current_pass, write, path, scene)  
+    ribarchive( rs,
+                "",
+                rm.settingsdir,
+                write,
+                current_pass,
+                scene,
+                writeSettings,
+                camrot,
+                dir=dir)
+    
+    rs = rm.world_rib_structure
+    ribarchive( rs,
+                "",
+                current_pass,
+                rm.worlddir,
+                write,
+                current_pass,
+                scene,
+                writeWorld)
 
 def invoke_renderer(rib, scene):
     rndr = scene.renderman_settings.renderexec
@@ -4649,8 +5204,7 @@ def start_render(render, ribfile, current_pass, scene):
         if not disp.displaydriver == "framebuffer" or current_pass.shadow or current_pass.environment:
             img = image(disp.file, scene)
             if not img in bpy.data.images and not disp.displaydriver == "framebuffer":
-                bpy.data.images.load(img)
-            else: bpy.data.images[img].update()    
+                bpy.data.images.load(img) 
        
 def render(scene):
     rndr = scene.renderman_settings.renderexec
@@ -4660,7 +5214,6 @@ def render(scene):
                                              
         active_pass = getactivepass(scene)
 
-#        name = active_pass.name+framepadding(scene)
         global exported_children, exported_instances
 
 
@@ -4711,7 +5264,7 @@ class RendermanRender(bpy.types.RenderEngine):
 #        global preview_scene
         for i, r in enumerate(scene.renderman_settings.passes):
             if r.name == 'Beauty':
-                scene.renderman_settings.passesindex = i
+                scene.renderman_settings.passes_index = i
         render(self, scene)
 #        if scene.name == "preview":
 #            preview_scene = True
@@ -4940,7 +5493,7 @@ def parmlayout(parm, master_parm, layout):
         if master_parm.texture:
             row.prop_search(parm, "textparameter", bpy.data, "textures", text=parm.name)
         else:
-            row.prop(parm, "textparameter", text=parm.name)
+            row.prop(parm, "textparameter", text="")
     if master_parm.parametertype == 'float':
         layout.prop(parm, float_size[master_parm.vector_size])
     if master_parm.parametertype == 'int':
@@ -4974,18 +5527,235 @@ def checkderived(active_parameter, layout, settings):
     for setting in settings:
         if active_parameter.name == setting:
             layout.prop(active_parameter, "free")
+                
+grp_menus = {}
+attr_menus = {}
+def attribute_panel(name, str_path, Pclass):
+    def draw_panel(self, context):
+        global grp_menus, attr_menus
+        scene = context.scene
+        maintain(scene)
+        path = eval(str_path)
+        rm = scene.renderman_settings
+        if eval(str_path) == rm.passes:
+            realpath = str_path+'["'+getactivepass(scene).name+'"]'
+        else:
+            realpath = str_path
+        path = eval(realpath)
+        layout = self.layout
+        row = layout.row(align=True)
+        row.operator("attributes.set_as_default", text="set as default", icon="FILE_TICK").path = str_path
+        row.operator("attributes.get_default", text="get default", icon="ANIM").path = str_path
+        row.operator("attributes."+name+"_remove_all")
+        row.menu("Renderman_MT_"+name+"_attribute_menu", icon="ZOOMIN", text="")
+        for group in path.attribute_groups:
+            box = layout.box()
+            row = box.row(align=True)
+            row.prop(group, "expand", text="", icon="TRIA_DOWN" if group.expand else "TRIA_RIGHT", emboss=False)
+            row.label(text=group.name)
+            box.active = group.export
+            if not group.name in grp_menus:
+                mname = attribute_options(name, str_path, "", group.name)
+                grp_menus[group.name] = mname
+            else:
+                mname = grp_menus[group.name]
+            row.menu(mname, icon="DOWNARROW_HLT")
+            
+            if group.expand:
+                for attribute in group.attributes:
+                    master_attribute = context.scene.renderman_settings.attribute_groups[group.name].attributes[attribute.name]
+                    row = box.row(align=True)
+                    row.active = attribute.export
+                    row.label(text=master_attribute.name)
+                    parmlayout(attribute, master_attribute, row)
+                    if not attribute.name in attr_menus:
+                        mname = attribute_options(name, str_path, attribute.name, group.name)
+                        attr_menus[attribute.name] = mname
+                    else:
+                        mname = attr_menus[attribute.name]
+                    row.menu(mname, icon="DOWNARROW_HLT")
 
-
-
-class Renderman_MT_attributepresets(bpy.types.Menu):
-    bl_label = "Presets"
     
-    def draw(self, context):
+    attribute_menu(name, str_path)
+
+    pname = "Renderman_PT_"+name+"_AttributesPanel"    
+    type(bpy.types.Panel)(pname, (bpy.types.Panel, Pclass ), {  "bl_label" : "Attributes",
+                                                                "COMPAT_ENGINES" : {'RENDERMAN'},
+                                                                "draw" : draw_panel})
+
+
+def attribute_options(name, path, attr, grp):
+    if attr == "": is_grp = True 
+    else: is_grp = False
+    
+    grps = eval(path).attribute_groups
+    
+    ## add/remove/defaults for attributes
+    def draw_attr_options(self, context):
+        layout = self.layout
+        
+        op = layout.operator("attributes.remove", text = "Remove")
+        op.path = path
+        op.attr = attr
+        op.grp = grp
+        
+        if is_grp: ex_path = grps[grp]
+        else: ex_path = grps[grp].attributes[attr]
+        layout.prop(ex_path, "export", text = "export")
+        
+        if is_grp:
+            opname = "attribute_group.get_default"
+        else:
+            opname = "attribute.get_default"
+            
+        op = layout.operator(opname, text="get default")
+        op.grp = grps[grp].name
+        if not is_grp: op.attr = grps[grp].attributes[attr].name
+        op.path = path
+
+        if is_grp:
+            opname = "attribute_group.set_default"
+        else:
+            opname = "attribute.set_default"
+                    
+        op = layout.operator(opname, text="set default")
+        op.grp = grps[grp].name
+        if not is_grp: op.attr = grps[grp].attributes[attr].name
+        op.path = path
+   
+    if is_grp: 
+        mname = "Renderman_MT_"+name+'_'+grps[grp].name+"_Attribute_Group_Options"
+    else:
+        mname = "Renderman_MT_"+name+"_"+grps[grp].attributes[attr].name+"_Attribute_Group_Options"
+    type(bpy.types.Menu)(mname, (bpy.types.Menu,), {"bl_label" : "",
+                                                    "draw" : draw_attr_options})
+    return mname
+
+def passes_linking_panel(name, str_path, BClass):
+    def draw_passes_linking(self, context):
+        path = eval(str_path)
+        layout = self.layout
+        row = layout.row()
+        col = row.column(align=True)
+        renderman_settings = context.scene.renderman_settings
+
+        if len(path.renderman) < 15:
+            rows = len(path.renderman)+1
+        else:
+            rows = 15
+        
+        passes_str_path = str_path+'.renderman'
+        col.template_list(path, "renderman", path, "renderman_index", rows=rows)
+        col = row.column(align = True)
+        col.operator("addpass", icon="ZOOMIN", text="").path = passes_str_path
+        col.operator("renderman.rempass", icon="ZOOMOUT", text ="").path = passes_str_path
+        if path.renderman_index < len(path.renderman) >= 0:
+            curr_pass = path.renderman[path.renderman_index]
+            layout.prop(curr_pass, "name")
+        
+            col = layout.column(align=True)
+            box = col.box()
+            row = box.row(align=True)
+            row.label("Link to Pass:")
+                
+            op = row.operator("renderman.change_pass_linking", text="All")
+            op.path = passes_str_path
+            op.type = "all"
+            op = row.operator("renderman.change_pass_linking", text="None")
+            op.path = passes_str_path
+            op.type = "none"
+            op = row.operator("renderman.change_pass_linking", text="Invert")
+            op.path = passes_str_path
+            op.type = "invert"
+            op = row.operator("renderman.change_pass_linking", text="Active")
+            op.path = passes_str_path
+            op.type = "active"
+                                                
+            box = col.box()
+            for rpass in renderman_settings.passes:
+                row = box.row()
+                row.label(rpass.name)
+                op_col = row.column()
+                op_col.active = rpass.name in curr_pass.links
+                op = op_col.operator("renderman.link_pass", icon="FILE_TICK", emboss=False)
+                op.rpass = rpass.name
+                op.path = passes_str_path
+    
+    pname = 'Renderman_PT_'+name+'Passes_Linking_Panel'        
+    type(bpy.types.Panel)(pname, (bpy.types.Panel, BClass), {   "bl_label" : "Passes Linking",
+                                                                "COMPAT_ENGINES" : {'RENDERMAN'},
+                                                                "draw" : draw_passes_linking})
+
+def attr_preset_menu(name, path):    
+    def draw_menu(self, context):
         rmansettings = context.scene.renderman_settings
-        target_path = bpy.utils.preset_paths(rmansettings.active_engine)[0]
+        target_path = os.path.join(bpy.utils.preset_paths("renderman")[0], rmansettings.active_engine)
         for preset in os.listdir(target_path):
-            p = preset.replace(".preset", "")
-            self.layout.operator("attribute.load", text=p.replace("_", " ")).preset_obj = p
+            if preset.find(".preset") != -1:
+                p = preset.replace(".preset", "")
+                op = self.layout.operator("attribute.load", text=p.replace("_", " "))
+                op.preset = p
+                op.path = path
+    
+    mname = "Renderman_MT_"+name+"_attributepresets"
+    type(bpy.types.Menu)(mname, (bpy.types.Menu,), {"bl_label" : "Presets",
+                                                    "draw" : draw_menu})
+
+                                                        
+def attribute_menu(name, path, selected = False): ### create the attribute Menus
+    mtype = bpy.types.Menu
+
+    ## root menu
+    def draw_root_menu(self, context):
+        if name == "object": obj = context.object.name
+        else: obj = ""
+        layout = self.layout
+        layout.menu("Renderman_MT_addnewattribute_"+name)
+        layout.menu("Renderman_MT_"+name+"_attributepresets", text="Presets")
+        if path != "":
+            layout.operator("attribute.add_preset", text="save preset").obj = obj
+
+    ## add Attribute:
+    ## Groups   
+    def draw_groups(self, context):        
+        layout = self.layout
+        rman = context.scene.renderman_settings
+        for grp in rman.attribute_groups:
+            mname = "Renderman_MT_"+grp.name+"addattr"
+            type(mtype)(mname, (mtype,), {  "bl_label" : grp.name, 
+                                            "grp_name" : grp.name, 
+                                            "draw" : draw_attributes,
+                                            "path" : path})
+            layout.menu(mname)
+                                                                
+    ## Attributes 
+    def draw_attributes(self, context):
+        layout = self.layout
+        rman = context.scene.renderman_settings
+        sub = rman.attribute_groups[self.grp_name].attributes
+        for attr in sub:
+            attrname = attr.name
+            if selected:
+                op = layout.operator("attributes.add_new_selected", text=attrname)
+            else:
+                op = layout.operator("attributes.add_new", text=attrname)
+                op.path = path
+            op.grp = self.grp_name
+            op.attr = attrname
+           
+    ##create menus
+    ##attribute groups
+    mname = "Renderman_MT_addnewattribute_"+name      
+    type(mtype)(mname, (mtype,), {  "bl_label" : "New Attribute",
+                                    "draw" : draw_groups})
+                                            
+    ##root menu
+    mname = "Renderman_MT_"+name+"_attribute_menu"
+    type(mtype)(mname, (mtype,), {   "bl_label" : "",
+                                        "draw" : draw_root_menu})
+        
+        
+
             
 #########################################################################################################
 #                                                                                                       #
@@ -5004,6 +5774,10 @@ class WorldButtonsPanel():
         rd = context.scene.render
         return (context.world) and (not rd.use_game_engine) and (rd.engine in cls.COMPAT_ENGINES)
 
+
+bp = "bpy.context.scene.renderman_settings"
+p = bp+".passes["+bp+".passes_index]"
+attr_preset_menu("world", p)
 
 class World_PT_RendermanPassesPanel(WorldButtonsPanel, bpy.types.Panel):
     bl_label="Passes"    
@@ -5024,18 +5798,39 @@ class World_PT_RendermanPassesPanel(WorldButtonsPanel, bpy.types.Panel):
         else:
             rows = 15
     
-        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
+        col.template_list(renderman_settings, "passes", renderman_settings, "passes_index", rows=rows)
         sub_row=col.row(align=True)    
         sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
 
         if renderman_settings.passes:
             if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
-                renderman_settings.passesindex = 0
+                renderman_settings.passes_index = 0
             elif renderman_settings.searchpass:
                 for i, passes in enumerate(renderman_settings.passes):
                     if passes.name == renderman_settings.searchpass:
-                        renderman_settings.passesindex = i
-                        renderman_settings.searchpass = ""    
+                        renderman_settings.passes_index = i
+                        renderman_settings.searchpass = ""                   
+
+class Renderman_PT_WorldPanel(WorldButtonsPanel, bpy.types.Panel):
+    bl_label = "General World Settings"
+    
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        scene = context.scene
+        layout = self.layout
+        active_pass = getactivepass(scene)
+        row = layout.row()
+        col = row.column()
+        col.prop(active_pass, "exportobjects", text="Export All Objects")
+        col = row.column(align=True)
+        col.enabled = not active_pass.exportobjects
+        col.prop_search(active_pass, "objectgroup", bpy.data, "groups", text="")
+        row = layout.row()
+        row.prop(active_pass, "exportlights", text="Export All Lights")
+        col  = row.column()
+        col.enabled = not active_pass.exportlights
+        col.prop_search(active_pass, "lightgroup", bpy.data, "groups", text="", icon="LAMP")   
 
 
 class Render_PT_ImagershaderPanel(WorldButtonsPanel, bpy.types.Panel):
@@ -5054,7 +5849,7 @@ class Render_PT_ImagershaderPanel(WorldButtonsPanel, bpy.types.Panel):
             pathcollection = context.scene.renderman_settings.pathcollection
             row.prop_search(active_pass, "imager_shader", pathcollection, "shadercollection", icon='MATERIAL', text="")
             row.operator("refreshshaderlist", text="", icon='FILE_REFRESH')            
-            checkshaderparameter("world", active_pass, active_pass.imager_shader, active_pass.imager_shader_parameter, scene)
+            checkshaderparameter("worldi", active_pass, active_pass.imager_shader, active_pass.imager_shader_parameter, scene)
 
             layout.label(text=shader_info(active_pass.imager_shader, active_pass.imager_shader_parameter, scene))              
 
@@ -5078,7 +5873,7 @@ class World_PT_SurfaceShaderPanel(bpy.types.Panel, WorldButtonsPanel):
         row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
         
         layout.label(text=shader_info(active_pass.global_shader.surface_shader, active_pass.global_shader.surface_shader_parameter, scene))
-        checkshaderparameter("world", active_pass, active_pass.global_shader.surface_shader, active_pass.global_shader.surface_shader_parameter, scene)
+        checkshaderparameter("worlds", active_pass, active_pass.global_shader.surface_shader, active_pass.global_shader.surface_shader_parameter, scene)
 
         matparmlayout(active_pass.global_shader.surface_shader_parameter, layout, bpy.data)
 
@@ -5100,53 +5895,14 @@ class World_PT_AtmosphereShaderPanel(bpy.types.Panel, WorldButtonsPanel):
         row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
         
         layout.label(text=shader_info(active_pass.global_shader.atmosphere_shader, active_pass.global_shader.atmosphere_shader_parameter, scene))
-        checkshaderparameter("world", active_pass, active_pass.global_shader.atmosphere_shader, active_pass.global_shader.atmosphere_shader_parameter, scene)
+        checkshaderparameter("worlda", active_pass, active_pass.global_shader.atmosphere_shader, active_pass.global_shader.atmosphere_shader_parameter, scene)
 
         matparmlayout(active_pass.global_shader.atmosphere_shader_parameter, layout, bpy.data)
-    
 
-class World_PT_RendermanParameterPanel(WorldButtonsPanel, bpy.types.Panel):
-    bl_label = "World Attributes"
-    bl_idname = "worldparameter"
 
-    COMPAT_ENGINES = {'RENDERMAN'}
-    
-
-    def draw(self, context):
-        scene = context.scene
-        renderman_settings = scene.renderman_settings
-        worldsettings = []
-        layout = self.layout
-        row = layout.row()
-        if renderman_settings.passes:
-            active_pass = getactivepass(scene)
-            row = layout.row(align=True)
-            row.operator("attributes.world_set_as_default", text="set as default", icon="FILE_TICK")
-            row.operator("attributes.world_get_default", text="get default", icon="ANIM")
-            row=layout.row(align=True)
-            row.menu("Renderman_MT_attributepresets", text="Presets") 
-            row.operator("attribute.add_preset", text="", icon="ZOOMIN").obj = ""
-            for group in active_pass.attribute_groups:
-                box = layout.box()
-                row = box.row(align=True)
-                row.prop(group, "expand", text="", icon="TRIA_DOWN" if group.expand else "TRIA_RIGHT", emboss=False)
-                row.label(text=group.name)
-                row.prop(group, "export", text="")
-                box.active = group.export
-                row.operator("attribute_group.world_get_default", text="", icon="ANIM").grp = group.name
-                row.operator("attribute_group.world_set_default", text="", icon="FILE_TICK").grp = group.name
-                if group.expand:
-                    attribute_index = -1
-                    for attribute in group.attributes:
-                        attribute_index += 1
-                        master_attribute = renderman_settings.attribute_groups[group.name].attributes[attribute_index]
-                        row = box.row(align=True)
-                        row.active = attribute.export
-                        row.label(text=master_attribute.name)
-                        parmlayout(attribute, master_attribute, row)
-                        row.prop(attribute, "export", text="")
-                        row.operator("attribute.world_get_default", text="", icon="ANIM").grp_opt = group.name + ' ' + attribute.name
-                        row.operator("attribute.world_set_default", text="", icon="FILE_TICK").grp_opt = group.name + ' ' + attribute.name
+string = 'bpy.context.scene.renderman_settings.passes'
+string += '[bpy.context.scene.renderman_settings.passes_index]'
+attribute_panel("world", string, WorldButtonsPanel)
                 
 
 class Renderman_PT_CustomWorldCodePanel(bpy.types.Panel, WorldButtonsPanel):
@@ -5205,7 +5961,14 @@ class  RENDERMan_MT_renderenginepresets(bpy.types.Menu):
     bl_label = "Renderengine Presets"
     preset_subdir = "renderman"
     preset_operator = "script.execute_rendermanpreset"
-    draw = bpy.types.Menu.draw_preset
+
+    def draw(self, context):
+        layout = self.layout
+        main_preset_path = bpy.utils.preset_paths('renderman')[0]
+        for file in os.listdir(main_preset_path):
+            filepath = os.path.join(main_preset_path, file)
+            if os.path.isfile(filepath):
+                layout.operator(self.preset_operator, text=file.replace(".py", "")).filepath = filepath
 
 class RenderButtonsPanel():
     bl_space_type = 'PROPERTIES'
@@ -5243,7 +6006,7 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
         rmansettings = scene.renderman_settings
         layout = self.layout
         row = layout.row(align = True)
-        row.menu("RENDERMan_MT_renderenginepresets", text=bpy.types.RENDERMan_MT_renderenginepresets.bl_label)
+        row.menu("RENDERMan_MT_renderenginepresets", text=rmansettings.active_engine)
         row.operator("renderengine_preset_add", text="", icon="ZOOMIN")
         
         ## basic render settings (executables, etc.)
@@ -5302,7 +6065,7 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
                 ogindex = rmansettings.hider_list_index
                 if ogindex >= len(rmansettings.hider_list): oqindex = 0   
                 selected_hider = scene.renderman_settings.hider_list[ogindex]                
-                col.label(text="", icon="FILE_TICK" if (selected_hider.name == rmansettings.default_hider and rmansettings.default_hider != "") else "BLANK300")
+                col.label(text="", icon="FILE_TICK" if (selected_hider.name == rmansettings.default_hider and rmansettings.default_hider != "") else "BLANK1")
                 row = hider_box.row(align=True)
 
                 row.operator("addhideroption", text="", icon='ZOOMIN')
@@ -5410,12 +6173,17 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
             dir_box = col.box()
             row = dir_box.row()
             col = row.column(align=True)    
-            col.label(getdefaultribpath(scene)+"/...")                                
+            col.label(getdefaultribpath(scene)+"/...")
+            col.prop(scene.renderman_settings, "objectdir", text="Objects")
             col.prop(scene.renderman_settings, "polydir", text="Poly Objects")
+            col.prop(scene.renderman_settings, "settingsdir", text="Settings")
+            col.prop(scene.renderman_settings, "worlddir", text="World")                          
+            col.prop(scene.renderman_settings, "polydir", text="Poly Meshs")
             col.prop(scene.renderman_settings, "particledir", text="Particle Systems")
             col.prop(scene.renderman_settings, "texdir", text="Texture maps")
             col.prop(scene.renderman_settings, "shadowdir", text="Shadowmaps")
             col.prop(scene.renderman_settings, "envdir", text="Envmaps")
+            col.prop(scene.renderman_settings, "bakedir", text="Bakefiles")
             row = dir_box.row(align=True)
             row.prop(scene.renderman_settings, "framepadding", text="Frame Padding")
             row.prop(scene.renderman_settings, "exportonly", text="Export Only")
@@ -5444,7 +6212,82 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
             col.prop_search(mappings, "shadowspotshader", pathcoll, "shadercollection")
             col.prop_search(mappings, "distantshader", pathcoll, "shadercollection")
             col.prop_search(mappings, "shadowdistantshader", pathcoll, "shadercollection")
+
+
+class Renderman_MT_loadPassPreset(bpy.types.Menu):
+    bl_label = "Pass Presets"
+    
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        active_engine = scene.renderman_settings.active_engine
+        main_preset_path = bpy.utils.preset_paths('renderman')[0]
+        sub_preset_path = os.path.join(main_preset_path, active_engine)
+ 
+        for file in os.listdir(sub_preset_path):
+            if checkextension(file) == 'pass':
+                preset = file.replace(".pass", "")
+                layout.operator("renderman.loadpresetpass", text=preset).preset = preset
             
+class Renderman_MT_addPresetPass(bpy.types.Menu):
+    bl_label="Presets"
+    
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        active_engine = scene.renderman_settings.active_engine
+        main_preset_path = bpy.utils.preset_paths('renderman')[0]
+        sub_preset_path = os.path.join(main_preset_path, active_engine) 
+        for file in os.listdir(sub_preset_path):
+            if checkextension(file) == 'pass':
+                preset = file.replace(".pass", "")
+                layout.operator("renderman.addpresetpass", text=preset).preset = preset            
+
+class Renderman_MT_addPassMenu(bpy.types.Menu):
+    bl_label = ""
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("addpass", text="New").path = "bpy.context.scene.renderman_settings.passes"
+        layout.menu("Renderman_MT_addPresetPass")
+        layout.operator("renderman.addpasspreset", text = "Save Preset")
+
+
+class Renderman_PT_RIB_Structure(bpy.types.Panel, RenderButtonsPanel):
+    bl_label = "Rib Structure"
+    
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw_archive_panel(self, layout, p, name):
+        defaults = {"Settings" : "[scene]_[pass][frame]",
+                    "World" : "[scene]_[pass][frame]"}
+                
+        mcol = layout.column(align=True)
+        hbox = mcol.box()
+        row = hbox.row(align=True)
+        row.prop(p, "expand", text = "", icon = "TRIA_DOWN" if p.expand else "TRIA_RIGHT", emboss=False)
+        row.label(name)
+        if p.expand:
+            bbox = mcol.box()
+            bbox.prop(p, "own_file", text="Export to own Archive")
+            row = bbox.row()
+            row.enabled = p.own_file
+            row.prop(p, "default_name")
+            col = row.column()
+            col.enabled = not p.default_name
+            col.prop(p, "filename", text="")
+            if p.filename == "" or p.filename == p.default_name: p.filename = defaults[name]
+            row.prop(p, "overwrite", text="")
+        
+    def draw(self, context):
+        rm = context.scene.renderman_settings
+        
+        types = {   "Settings" : rm.settings_rib_structure,
+                    "World" : rm.world_rib_structure}
+                        
+        for t in types:
+            self.draw_archive_panel(self.layout, types[t], t)
+
             
 class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Passes"
@@ -5468,46 +6311,35 @@ class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
         else:
             rows = 15
     
-        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
+        col.template_list(renderman_settings, "passes", renderman_settings, "passes_index", rows=rows)
         sub_row=col.row(align=True)    
         sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
-        sub_row.prop(scene.renderman_settings, "exportallpasses", text="Export All Passes")
+        sub_row.menu("Renderman_MT_loadPassPreset")
+        sub_row.prop(scene.renderman_settings, "exportallpasses", text="All Passes")
 
         if renderman_settings.passes:
             if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
-                renderman_settings.passesindex = 0
+                renderman_settings.passes_index = 0
             elif renderman_settings.searchpass:
                 for i, passes in enumerate(renderman_settings.passes):
                     if passes.name == renderman_settings.searchpass:
-                        renderman_settings.passesindex = i
+                        renderman_settings.passes_index = i
                         renderman_settings.searchpass = ""        
 
         col = row.column(align=True)
 
-        col.operator("addpass", text="", icon="ZOOMIN")
+        col.menu("Renderman_MT_addPassMenu", icon="ZOOMIN")
         col.operator("rempass", text="", icon="ZOOMOUT")
         col.operator("movepass", icon='TRIA_UP', text="").direction = "up"
         col.operator("movepass", icon='TRIA_DOWN', text="").direction = "down"
         row = layout.row(align=True)
         row.prop(active_pass, "name", text="")
-        row.prop(active_pass, "exportanimation", text="Animate Pass")        
+        row.prop(active_pass, "exportanimation", text="Animate Pass")
 
         if renderman_settings.passes:
             row = layout.row(align=True)        
             row = layout.row()
             row.prop(active_pass, "imagedir", text="Image Folder")
-            row = layout.row()
-            col = row.column()
-            col.prop(active_pass, "exportobjects", text="Export All Objects")
-            col = row.column(align=True)
-            col.enabled = not active_pass.exportobjects
-            col.prop_search(active_pass, "objectgroup", bpy.data, "groups", text="")
-            row = layout.row()
-            row.prop(active_pass, "exportlights", text="Export All Lights")
-            col  = row.column()
-            col.enabled = not active_pass.exportlights
-            col.prop_search(active_pass, "lightgroup", bpy.data, "groups", text="", icon="LAMP")             
-
 
 class Renderman_PT_QualityPanel(RenderButtonsPanel, bpy.types.Panel):
     bl_label = "Quality"
@@ -5637,7 +6469,7 @@ class Render_PT_RendermanDisplayPanel(RenderButtonsPanel, bpy.types.Panel):
                 row = main_box.row(align=True)
 #                col = main_row.column()
 #                row = col.row(align=True)
-#                row.label(text="", icon = "FILE_TICK" if display.send else "BLANK100")                  
+#                row.label(text="", icon = "FILE_TICK" if display.send else "BLANK1")                  
 #                row.operator("display.send", icon="IMAGE_COL", text="").display = display.name
 #                if display.displaydriver == "framebuffer":
 #                    row.enabled = False
@@ -5927,39 +6759,11 @@ class MaterialButtonsPanel():
 #        current_scene = bpy.context.scene
 #        self.layout.template_preview(context.material)    
 
+bp = "bpy.context.object.active_material"
+np = bp+'.name'
+rmp = bp+'.renderman['+bp+'.renderman_index]'
 
-class Material_PT_RendermanPassesPanel(MaterialButtonsPanel, bpy.types.Panel):
-    bl_label="Passes"    
-    
-    COMPAT_ENGINES = {'RENDERMAN'}
-    
-    def draw(self, context):
-        scene = context.scene
-        renderman_settings = scene.renderman_settings
-        layout = self.layout
-        row = layout.row()
-        col = row.column(align=True)
-
-        active_pass = getactivepass(scene)
-
-        if len(renderman_settings.passes) < 15:
-            rows = len(renderman_settings.passes)+1
-        else:
-            rows = 15
-    
-        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
-        sub_row=col.row(align=True)    
-        sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
-
-        if renderman_settings.passes:
-            if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
-                renderman_settings.passesindex = 0
-            elif renderman_settings.searchpass:
-                for i, passes in enumerate(renderman_settings.passes):
-                    if passes.name == renderman_settings.searchpass:
-                        renderman_settings.passesindex = i
-                        renderman_settings.searchpass = "" 
-
+passes_linking_panel("material", "bpy.context.object.active_material", MaterialButtonsPanel)
 
 class RENDERMAN_PT_context_material(MaterialButtonsPanel, bpy.types.Panel):
     bl_label = " "
@@ -6017,7 +6821,8 @@ class RENDERMANMaterial_PT_MotionBlurPanel(MaterialButtonsPanel, bpy.types.Panel
     def draw(self, context):
         layout = self.layout
         #maintain(context.scene)
-        mat = context.material.renderman[getactivepass(context.scene).name]
+        m = context.material
+        mat = m.renderman[m.renderman_index]
         row = layout.row()
         col = row.column(align=True)
         row.enabled = getactivepass(context.scene).motionblur
@@ -6039,7 +6844,8 @@ class RENDERMANMaterial_PT_SurfaceShaderPanel(MaterialButtonsPanel, bpy.types.Pa
     def draw(self, context):
         scene = context.scene
         #maintain(scene)
-        mat = context.object.active_material.renderman[getactivepass(scene).name]
+        m = context.object.active_material
+        mat = m.renderman[m.renderman_index]
         layout = self.layout
         pathcollection = context.scene.renderman_settings.pathcollection
 
@@ -6071,7 +6877,8 @@ class RENDERMANMaterial_PT_DisplacementShaderPanel(MaterialButtonsPanel, bpy.typ
     def draw(self, context):
         scene = context.scene
         #maintain(scene)
-        mat = context.object.active_material.renderman[getactivepass(scene).name]
+        m = context.object.active_material
+        mat = m.renderman[m.renderman_index]
         layout = self.layout
         row = layout.row(align=True)
         pathcollection = context.scene.renderman_settings.pathcollection
@@ -6092,7 +6899,8 @@ class RENDERMANMaterial_PT_InteriorShaderPanel(MaterialButtonsPanel, bpy.types.P
     def draw(self, context):
         scene = context.scene
         #maintain(scene)
-        mat = context.object.active_material.renderman[getactivepass(scene).name]
+        m = context.object.active_material
+        mat = m.renderman[m.renderman_index]
         layout = self.layout
         row = layout.row(align=True)
         pathcollection = context.scene.renderman_settings.pathcollection
@@ -6113,7 +6921,8 @@ class RENDERMANMaterial_PT_ExteriorShaderPanel(MaterialButtonsPanel, bpy.types.P
     def draw(self, context):
         scene = context.scene
         #maintain(scene)
-        mat = context.object.active_material.renderman[getactivepass(scene).name]
+        m = context.object.active_material
+        mat = m.renderman[m.renderman_index]
         layout = self.layout
         row = layout.row(align=True)
         pathcollection = context.scene.renderman_settings.pathcollection
@@ -6134,7 +6943,8 @@ class RENDERMANMaterial_PT_AreaLightShaderPanel(MaterialButtonsPanel, bpy.types.
     def draw(self, context):
         scene = context.scene
         #maintain(scene)
-        mat = context.object.active_material.renderman[getactivepass(scene).name]
+        m = context.object.active_material
+        mat = m.renderman[m.renderman_index]
         layout = self.layout
         row = layout.row(align=True)
         pathcollection = context.scene.renderman_settings.pathcollection
@@ -6171,39 +6981,12 @@ class LightDataButtonsPanel():
         rd = context.scene.render
         return (context.lamp) and (rd.engine in cls.COMPAT_ENGINES)
     
-    
-class Light_PT_RendermanPassesPanel(LightDataButtonsPanel, bpy.types.Panel):
-    bl_label="Passes"    
-    
-    COMPAT_ENGINES = {'RENDERMAN'}
-    
-    def draw(self, context):
-        scene = context.scene
-        renderman_settings = scene.renderman_settings
-        layout = self.layout
-        row = layout.row()
-        col = row.column(align=True)
-    
-        active_pass = getactivepass(scene)
-    
-        if len(renderman_settings.passes) < 15:
-            rows = len(renderman_settings.passes)+1
-        else:
-            rows = 15
-    
-        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
-        sub_row=col.row(align=True)    
-        sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
-    
-        if renderman_settings.passes:
-            if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
-                renderman_settings.passesindex = 0
-            elif renderman_settings.searchpass:
-                for i, passes in enumerate(renderman_settings.passes):
-                    if passes.name == renderman_settings.searchpass:
-                        renderman_settings.passesindex = i
-                        renderman_settings.searchpass = "" 
-    
+lbp = 'bpy.context.object.data'
+
+lnp = lbp+'.name'
+lrmp = lbp+'.renderman['+lbp+'.renderman_index]'
+
+passes_linking_panel("light", lbp, LightDataButtonsPanel)
 
 class LAMP_PT_RendermanLight(LightDataButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Settings"
@@ -6216,7 +6999,7 @@ class LAMP_PT_RendermanLight(LightDataButtonsPanel, bpy.types.Panel):
         layout = self.layout
         light = context.object
         scene = context.scene
-        lamp = light.data.renderman[getactivepass(scene).name]
+        lamp = light.data.renderman[light.data.renderman_index]
         type = light.data.type
         rmansettings = light.data.lightsettings
         renderman = lamp
@@ -6268,15 +7051,10 @@ class LAMP_PT_RendermanLight(LightDataButtonsPanel, bpy.types.Panel):
 #                                                                                                       #
 #########################################################################################################
 
-class Renderman_MT_objattributepresets(bpy.types.Menu):
-    bl_label = "Presets"
-    
-    def draw(self, context):
-        rmansettings = context.scene.renderman_settings
-        target_path = bpy.utils.preset_paths(rmansettings.active_engine)[0]
-        for preset in os.listdir(target_path):
-            p = preset.replace(".preset", "")
-            self.layout.operator("attribute.load", text=p.replace("_", " ")).preset_obj = p+" "+context.object.name
+p = "bpy.context.object.renderman"
+p += "["+p+"_index]"
+attr_preset_menu("object", p)
+
 
 
 class ObjectButtonsPanel():
@@ -6289,40 +7067,24 @@ class ObjectButtonsPanel():
     def poll(cls, context):
         rd = context.scene.render
         return (context.object) and (rd.engine in cls.COMPAT_ENGINES) and not (context.object.type in ["LAMP", "CAMERA"])
-
-
-class Object_PT_RendermanPassesPanel(ObjectButtonsPanel, bpy.types.Panel):
-    bl_label="Passes"    
     
-    COMPAT_ENGINES = {'RENDERMAN'}
-    
-    def draw(self, context):
-        scene = context.scene
-        renderman_settings = scene.renderman_settings
-        layout = self.layout
-        row = layout.row()
-        col = row.column(align=True)
+class ObjectAttributesPanel():
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_label=""
 
-        active_pass = getactivepass(scene)
+    @classmethod
+    def poll(cls, context):
+        rd = context.scene.render
+        return (context.object) and (rd.engine in cls.COMPAT_ENGINES) and not (context.object.type in ["CAMERA"])    
 
-        if len(renderman_settings.passes) < 15:
-            rows = len(renderman_settings.passes)+1
-        else:
-            rows = 15
-    
-        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
-        sub_row=col.row(align=True)    
-        sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
+obp = 'bpy.context.object'
 
-        if renderman_settings.passes:
-            if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
-                renderman_settings.passesindex = 0
-            elif renderman_settings.searchpass:
-                for i, passes in enumerate(renderman_settings.passes):
-                    if passes.name == renderman_settings.searchpass:
-                        renderman_settings.passesindex = i
-                        renderman_settings.searchpass = "" 
+onp = obp+'.name'
+ormp = obp+'.renderman['+obp+'.renderman_index]'
 
+passes_linking_panel("object", "bpy.context.object", ObjectAttributesPanel)
 
 class Object_PT_MotionBlurPanel(ObjectButtonsPanel, bpy.types.Panel):
     bl_label ="Motion Blur"
@@ -6333,7 +7095,10 @@ class Object_PT_MotionBlurPanel(ObjectButtonsPanel, bpy.types.Panel):
         scene = context.scene
         #maintain(scene)
         obj = context.object
-        rman = obj.renderman[getactivepass(scene).name]
+        try:
+            rman = obj.renderman[obj.renderman_index]
+        except IndexError:
+            pass
     
         layout = self.layout
         row = layout.row()
@@ -6353,12 +7118,12 @@ class Mesh_PT_IlluminatePanel(ObjectButtonsPanel, bpy.types.Panel):
         maintain(scene)
         layout = self.layout
         object = context.object
-        renderman_settings = object.renderman[getactivepass(scene).name]
+        renderman_settings = object.renderman[object.renderman_index]
         row=layout.row(align=True)
         row.operator("lightlinking", text="All").type = "all"
         row.operator("lightlinking", text="none").type = "none"
         row.operator("lightlinking", text="invert").type = "invert"
-        row.prop_search(object.renderman[getactivepass(scene).name], "lightgroup", bpy.data, "groups")
+        row.prop_search(object.renderman[object.renderman_index], "lightgroup", bpy.data, "groups")
         row = layout.row()
         col = row.column(align=True)
         header_box = col.box()
@@ -6370,55 +7135,12 @@ class Mesh_PT_IlluminatePanel(ObjectButtonsPanel, bpy.types.Panel):
             row.label(light.name)
             row.prop(light, "illuminate", icon='OUTLINER_OB_LAMP' if light.illuminate else 'LAMP', emboss=False, text="")
 
-        
-class ObjectAttributesPanel():
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = "object"
-    bl_label=""
 
-    @classmethod
-    def poll(cls, context):
-        rd = context.scene.render
-        return (context.object) and (rd.engine in cls.COMPAT_ENGINES) and not (context.object.type in ["CAMERA"])
-
-class Mesh_PT_AttributePanel(ObjectAttributesPanel, bpy.types.Panel):
-    bl_label = "Renderman Attributes"
-    bl_default_closed = True
-
-    COMPAT_ENGINES = {'RENDERMAN'}
-
-    def draw(self, context):
-        scene = context.scene
-        maintain(scene)
-        object = context.object
-        renderman_settings = object.renderman[getactivepass(scene).name]
-        layout = self.layout
-        row = layout.row(align = True)
-        row.operator("attributes.object_set_as_default", text="set as default", icon="FILE_TICK")
-        row.operator("attributes.object_get_default", text="get default", icon="ANIM")
-        row = layout.row(align = True)
-        row.menu("Renderman_MT_objattributepresets", text="Presets") 
-        row.operator("attribute.add_preset", text="", icon="ZOOMIN").obj = "object.name"        
-        for group in renderman_settings.attribute_groups:
-            box = layout.box()
-            row = box.row(align=True)
-            row.prop(group, "expand", text="", icon="TRIA_RIGHT" if not group.expand else "TRIA_DOWN", emboss = False)
-            row.label(text=group.name)
-            row.prop(group, "export", text="")
-            box.active = group.export
-            row.operator("attribute_group.obj_get_default", text="", icon="ANIM").grp = group.name
-            row.operator("attribute_group.obj_set_default", text="", icon="FILE_TICK").grp = group.name         
-            if group.expand:
-                for attribute in group.attributes:
-                    master_attribute = context.scene.renderman_settings.attribute_groups[group.name].attributes[attribute.name]
-                    row = box.row(align=True)
-                    row.active = attribute.export
-                    row.label(text=master_attribute.name)
-                    parmlayout(attribute, master_attribute, row)
-                    row.prop(attribute, "export", text="")
-                    row.operator("attribute.obj_get_default", text="", icon="ANIM").grp_opt = group.name + ' ' + attribute.name
-                    row.operator("attribute.obj_set_default", text="", icon="FILE_TICK").grp_opt = group.name + ' ' + attribute.name                  
+name = "object"
+string = 'bpy.context.object.renderman'
+attribute_menu(name, string)
+string += '['+string+'_index]'
+attribute_panel(name, string, ObjectAttributesPanel)                
 
 class Mesh_PT_GeneralSettings(ObjectButtonsPanel, bpy.types.Panel):
     bl_label ="General Settings"
@@ -6432,7 +7154,7 @@ class Mesh_PT_GeneralSettings(ObjectButtonsPanel, bpy.types.Panel):
         layout = self.layout
         object = context.object
         layout.prop(object.data, "show_double_sided")
-        layout.prop(object.renderman[getactivepass(scene).name], "shadingrate")
+        layout.prop(object.renderman[object.renderman_index], "shadingrate")
     
 #########################################################################################################
 #                                                                                                       #
@@ -6440,16 +7162,23 @@ class Mesh_PT_GeneralSettings(ObjectButtonsPanel, bpy.types.Panel):
 #                                                                                                       #
 #########################################################################################################
 
-class Mesh_PT_exportOptions(bpy.types.Panel):
+class MeshDataButtonsPanel():
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'data'
-    bl_label = 'Export Options'
     
     @classmethod
     def poll(cls, context):
         rd = context.scene.render
         return (context.mesh) and (rd.engine in cls.COMPAT_ENGINES)
+
+obp = 'bpy.context.object.data'
+
+onp = obp+'.name'
+        
+class Mesh_PT_exportOptions(bpy.types.Panel, MeshDataButtonsPanel):
+
+    bl_label = 'Export Options'
     
     COMPAT_ENGINES = {'RENDERMAN'}
     
@@ -6507,17 +7236,17 @@ class Camera_PT_RendermanPassesPanel(CameraDataButtonsPanel, bpy.types.Panel):
         else:
             rows = 15
     
-        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
+        col.template_list(renderman_settings, "passes", renderman_settings, "passes_index", rows=rows)
         sub_row=col.row(align=True)    
         sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
 
         if renderman_settings.passes:
             if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
-                renderman_settings.passesindex = 0
+                renderman_settings.passes_index = 0
             elif renderman_settings.searchpass:
                 for i, passes in enumerate(renderman_settings.passes):
                     if passes.name == renderman_settings.searchpass:
-                        renderman_settings.passesindex = i
+                        renderman_settings.passes_index = i
                         renderman_settings.searchpass = "" 
     
 
@@ -6563,13 +7292,13 @@ class Renderman_PT_CameraLens(CameraDataButtonsPanel, bpy.types.Panel):
         row = layout.row()
         col = row.column()
         col.enabled = getactivepass(scene).motionblur
-        col.prop(camera.renderman[getactivepass(scene).name], "transformation_blur")
-        #col.prop(camera.renderman[getactivepass(scene).name], "perspective_blur")
+        col.prop(camera.renderman[camera.renderman_index], "transformation_blur")
+        #col.prop(camera.renderman[camera.renderman_index], "perspective_blur")
         row = col.row()
-        transformation_blur = camera.renderman[getactivepass(scene).name].transformation_blur
-        perspective_blur = camera.renderman[getactivepass(scene).name].perspective_blur
+        transformation_blur = camera.renderman[camera.renderman_index].transformation_blur
+        perspective_blur = camera.renderman[camera.renderman_index].perspective_blur
         row.enabled = perspective_blur or transformation_blur
-        row.prop(camera.renderman[getactivepass(scene).name], "motion_samples")
+        row.prop(camera.renderman[camera.renderman_index], "motion_samples")
 
 
 ##################################################################################################################################
@@ -6588,39 +7317,27 @@ class ParticleButtonsPanel():
     @classmethod
     def poll(cls, context):
         return properties_particle.particle_panel_poll(cls, context)
+    
+obp = "bpy.context.particle_system"
 
+onp = obp+'.name'
+ormp = obp+'.settings.renderman['+obp+'.renderman_index]'  
 
-class Particles_PT_RendermanPassesPanel(ParticleButtonsPanel, bpy.types.Panel):
-    bl_label="Passes"    
+passes_linking_panel("particle", obp+'.settings', ParticleButtonsPanel)
+
+class Renderman_PT_ParticleMBPanel(bpy.types.Panel, ParticleButtonsPanel):
+    bl_label = "Motion Blur"
     
     COMPAT_ENGINES = {'RENDERMAN'}
     
     def draw(self, context):
         scene = context.scene
-        renderman_settings = scene.renderman_settings
         layout = self.layout
-        row = layout.row()
-        col = row.column(align=True)
-
-        active_pass = getactivepass(scene)
-
-        if len(renderman_settings.passes) < 15:
-            rows = len(renderman_settings.passes)+1
-        else:
-            rows = 15
+        psystem = context.particle_system
+        rman =psystem.settings.renderman[psystem.settings.renderman_index]
     
-        col.template_list(renderman_settings, "passes", renderman_settings, "passesindex", rows=rows)
-        sub_row=col.row(align=True)    
-        sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
-
-        if renderman_settings.passes:
-            if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
-                renderman_settings.passesindex = 0
-            elif renderman_settings.searchpass:
-                for i, passes in enumerate(renderman_settings.passes):
-                    if passes.name == renderman_settings.searchpass:
-                        renderman_settings.passesindex = i
-                        renderman_settings.searchpass = "" 
+        layout.prop(rman, "motion_blur")
+        layout.prop(rman, "motion_samples")
                         
     
 class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel):
@@ -6635,7 +7352,7 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
         pathcollection = context.scene.renderman_settings.pathcollection
         
         psystem = context.particle_system
-        rman = psystem.settings.renderman[getactivepass(scene).name]
+        rman = psystem.settings.renderman[psystem.settings.renderman_index]
         obj = context.object
 
         row = layout.row()
@@ -6741,47 +7458,18 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
             layout.prop(rman, "archive")
         elif rman.render_type == "Group":
             layout.prop_search(rman, "group", bpy.data, "groups")
-        
-        
-class Particle_PT_AttributePanel(ParticleButtonsPanel, bpy.types.Panel):
-    bl_label = "Renderman Attributes"
-    bl_default_closed = True
 
-    COMPAT_ENGINES = {'RENDERMAN'}
 
-    def draw(self, context):
-        scene = context.scene
-        maintain(scene)
-        object = context.object
-        psystem = context.particle_system
-        renderman_settings = psystem.settings.renderman[getactivepass(scene).name]
-        layout = self.layout
-        row = layout.row(align = True)
-        row.operator("attributes.object_set_as_default", text="set as default", icon="FILE_TICK")
-        row.operator("attributes.object_get_default", text="get default", icon="ANIM")
-        row = layout.row(align = True)
-        row.menu("Renderman_MT_objattributepresets", text="Presets") 
-        row.operator("attribute.add_preset", text="", icon="ZOOMIN").obj = "object.name"        
-        for group in renderman_settings.attribute_groups:
-            box = layout.box()
-            row = box.row(align=True)
-            row.prop(group, "expand", text="", icon="TRIA_RIGHT" if not group.expand else "TRIA_DOWN", emboss = False)
-            row.label(text=group.name)
-            row.prop(group, "export", text="")
-            box.active = group.export
-            row.operator("attribute_group.obj_get_default", text="", icon="ANIM").grp = group.name
-            row.operator("attribute_group.obj_set_default", text="", icon="FILE_TICK").grp = group.name         
-            if group.expand:
-                for attribute in group.attributes:
-                    master_attribute = context.scene.renderman_settings.attribute_groups[group.name].attributes[attribute.name]
-                    row = box.row(align=True)
-                    row.active = attribute.export
-                    row.label(text=master_attribute.name)
-                    parmlayout(attribute, master_attribute, row)
-                    row.prop(attribute, "export", text="")
-                    row.operator("attribute.obj_get_default", text="", icon="ANIM").grp_opt = group.name + ' ' + attribute.name
-                    row.operator("attribute.obj_set_default", text="", icon="FILE_TICK").grp_opt = group.name + ' ' + attribute.name                  
+### Attributes
+name = "particle"
+string = 'bpy.context.particle_system.settings.renderman'      
+attribute_menu(name, string)
 
+i = string+'_index'
+string += '['+i+']'
+attribute_panel(name, string, ParticleButtonsPanel)
+
+attr_preset_menu(name, string)
 
 ##################################################################################################################################
 
@@ -6835,16 +7523,39 @@ class Renderman_PT_RendermanShaderPanel(bpy.types.Panel):
 #      3D View                                                                                          #
 #                                                                                                       #
 #########################################################################################################
+attribute_menu("obj_selected", "", selected = True)
 
-class Renderman_MT_Attribute_Presets_Selected(bpy.types.Menu):
+class Renderman_MT_object_specials(bpy.types.Menu):
+    bl_label = "Renderman"
+    
+    def draw(self, context):
+        self.layout.menu("Renderman_MT_obj_selected_attribute_menu", text="Attributes")
+        self.layout.menu("Renderman_MT_LightLinking")
+        
+class Renderman_MT_LightLinking(bpy.types.Menu):
+    bl_label="Light Linking"
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("renderman.light_linking", text = "Add").type = "add"
+        layout.operator("renderman.light_linking", text = "Remove").type = "remove"
+        layout.operator("renderman.light_linking", text = "Exclusive").type = "exclusive"        
+
+def draw_obj_specials_rm_menu(self, context):
+    self.layout.menu("Renderman_MT_object_specials")
+
+
+
+class Renderman_MT_obj_selected_attributepresets(bpy.types.Menu):
     bl_label = "Load Attribute Preset"
     
     def draw(self, context):
         rmansettings = context.scene.renderman_settings
-        target_path = bpy.utils.preset_paths(rmansettings.active_engine)[0]
+        target_path = os.path.join(bpy.utils.preset_paths("renderman")[0], rmansettings.active_engine)
         for preset in os.listdir(target_path):
-            p = preset.replace(".preset", "")
-            self.layout.operator("attribute.load_selected", text=p.replace("_", " ")).preset = p
+            if preset.find(".preset") != -1:
+                p = preset.replace(".preset", "")
+                self.layout.operator("attribute.load_selected", text=p.replace("_", " ")).preset = p
 
 
 class Renderman_PT_3D_View_Ops(bpy.types.Panel):
@@ -6860,16 +7571,16 @@ class Renderman_PT_3D_View_Ops(bpy.types.Panel):
     def draw(self, context):
         maintain(context.scene)
         layout = self.layout
-        layout.menu("Renderman_MT_Attribute_Presets_Selected")
+        layout.menu("Renderman_MT_object_specials")
 
 ##################################################################################################################################
         
 def register():
-    bpy.types.register
+    bpy.types.VIEW3D_MT_object_specials.append(draw_obj_specials_rm_menu)
+    
 
 def unregister():
-    bpy.types.unregister
+    bpy.types.VIEW3D_MT_object_specials.remove(draw_obj_specials_rm_menu)
 
 if __name__ == "__main__":
     register()
-#    bpy.ops.renderman.maintain()
