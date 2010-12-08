@@ -499,7 +499,7 @@ class RendermanRender(bpy.types.RenderEngine):
 ##################################################################################################################################
 
 def register():
-    export_renderman.rm_maintain.register()
+    export_renderman.rm_maintain.reg_maintain()
     bpy.types.VIEW3D_MT_object_specials.append(draw_obj_specials_rm_menu)
     
     

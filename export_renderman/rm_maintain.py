@@ -31,6 +31,7 @@
 #Thanks to: Campbell Barton, Eric Back, Nathan Vegdahl
 
 import bpy
+import export_renderman
 
 String = bpy.props.StringProperty
 Bool = bpy.props.BoolProperty
@@ -1132,7 +1133,7 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
 
 ##################################################################################################################################
 
-def register():
+def reg_maintain():
     bpy.ops.renderman.maintain()
     
 def unregister():

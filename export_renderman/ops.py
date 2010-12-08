@@ -41,8 +41,8 @@
 
 import bpy
 import export_renderman
-from export_renderman import rm_maintain
-from rm_maintain import *
+import export_renderman.rm_maintain
+from export_renderman.rm_maintain import *
 
 String = bpy.props.StringProperty
 Bool = bpy.props.BoolProperty
