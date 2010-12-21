@@ -414,8 +414,8 @@ bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["s
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].int_three[0] = 0
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].int_three[1] = 0
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].int_three[2] = 0
-if not "/usr/share/aqsis/shaders" in bpy.context.scene.renderman_settings.pathcollection.shaderpaths:
-	bpy.context.scene.renderman_settings.pathcollection.shaderpaths.add().name = "/usr/share/aqsis/shaders"
+if not "/usr/share/aqsis/shaders" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
+	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "/usr/share/aqsis/shaders"
 if not "hidden" in bpy.context.scene.renderman_settings.hider_list:
 	bpy.context.scene.renderman_settings.hider_list.add().name = "hidden"
 if not "depthfilter" in bpy.context.scene.renderman_settings.hider_list["hidden"].options:

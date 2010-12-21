@@ -30,10 +30,11 @@
 
 #Thanks to: Campbell Barton, Eric Back, Nathan Vegdahl
 
-import bpy
 import export_renderman
 import export_renderman.rm_maintain
 from export_renderman.rm_maintain import *
+import bpy
+import os
 
 ##################################################################################################################################
 #########################################################################################################
@@ -61,7 +62,7 @@ def parmlayout(parm, master_parm, layout):
         row = layout.row(align=True)
         
         if master_parm.texture:
-            row.prop_search(parm, "textparameter", bpy.data, "textures", text=parm.name)
+            row.prop_search(parm, "textparameter", bpy.data, "textures", text="")
         else:
             row.prop(parm, "textparameter", text="")
     if master_parm.parametertype == 'float':
@@ -100,62 +101,53 @@ def checkderived(active_parameter, layout, settings):
                 
 grp_menus = {}
 attr_menus = {}
-def attribute_panel(name, str_path, Pclass):
-    def draw_panel(self, context):
-        global grp_menus, attr_menus
-        scene = context.scene
-        active_pass = getactivepass(scene)
-        if active_pass:
-            #maintain(scene)
-            path = eval(str_path)
-            rm = scene.renderman_settings
-            if eval(str_path) == rm.passes:
-                realpath = str_path+'["'+getactivepass(scene).name+'"]'
-            else:
-                realpath = str_path
-            path = eval(realpath)
-            layout = self.layout
-            row = layout.row(align=True)
-            row.operator("attributes.set_as_default", text="set as default", icon="FILE_TICK").path = str_path
-            row.operator("attributes.get_default", text="get default", icon="ANIM").path = str_path
-            row.operator("attributes."+name+"_remove_all")
-            row.menu("Renderman_MT_"+name+"_attribute_menu", icon="ZOOMIN", text="")
-            for group in path.attribute_groups:
-                box = layout.box()
-                row = box.row(align=True)
-                row.prop(group, "expand", text="", icon="TRIA_DOWN" if group.expand else "TRIA_RIGHT", emboss=False)
-                row.label(text=group.name)
-                box.active = group.export
-                if not group.name in grp_menus:
-                    mname = attribute_options(name, str_path, "", group.name)
-                    grp_menus[group.name] = mname
-                else:
-                    mname = grp_menus[group.name]
-                row.menu(mname, icon="DOWNARROW_HLT")
-                
-                if group.expand:
-                    for attribute in group.attributes:
-                        master_attribute = context.scene.renderman_settings.attribute_groups[group.name].attributes[attribute.name]
-                        row = box.row(align=True)
-                        row.active = attribute.export
-                        row.label(text=master_attribute.name)
-                        parmlayout(attribute, master_attribute, row)
-                        if not attribute.name in attr_menus:
-                            mname = attribute_options(name, str_path, attribute.name, group.name)
-                            attr_menus[attribute.name] = mname
-                        else:
-                            mname = attr_menus[attribute.name]
-                        row.menu(mname, icon="DOWNARROW_HLT")
+def attribute_panel_layout(name, str_path, layout, scene):
+    global grp_menus, attr_menus
+    active_pass = getactivepass(scene)
+    try:
+        path = eval(str_path)
+        rm = scene.renderman_settings
+        if eval(str_path) == rm.passes:
+            realpath = str_path+'["'+getactivepass(scene).name+'"]'
         else:
-            self.layout.label("No Render Pass")
-    
-    attribute_menu(name, str_path)
-
-    pname = "Renderman_PT_"+name+"_AttributesPanel"    
-    type(bpy.types.Panel)(pname, (bpy.types.Panel, Pclass ), {  "bl_label" : "Attributes",
-                                                                "COMPAT_ENGINES" : {'RENDERMAN'},
-                                                                "draw" : draw_panel})
-
+            realpath = str_path
+        path = eval(realpath)
+        row = layout.row(align=True)
+        row.operator("attributes.set_as_default", text="set as default", icon="FILE_TICK").path = str_path
+        row.operator("attributes.get_default", text="get default", icon="ANIM").path = str_path
+        op = row.operator("attributes.remove", text="Remove All")
+        op.type = "all"
+        op.path = str_path
+        attribute_menu(name, str_path)
+        row.menu("Renderman_MT_"+name+"_attribute_menu", icon="ZOOMIN", text="")
+        for group in path.attribute_groups:
+            box = layout.box()
+            row = box.row(align=True)
+            row.prop(group, "expand", text="", icon="TRIA_DOWN" if group.expand else "TRIA_RIGHT", emboss=False)
+            row.label(text=group.name)
+            box.active = group.export
+            if not group.name in grp_menus:
+                mname = attribute_options(name, str_path, "", group.name)
+                grp_menus[group.name] = mname
+            else:
+                mname = grp_menus[group.name]
+            row.menu(mname, icon="DOWNARROW_HLT")
+            
+            if group.expand:
+                for attribute in group.attributes:
+                    master_attribute = scene.renderman_settings.attribute_groups[group.name].attributes[attribute.name]
+                    row = box.row(align=True)
+                    row.active = attribute.export
+                    row.label(text=master_attribute.name)
+                    parmlayout(attribute, master_attribute, row)
+                    if not attribute.name in attr_menus:
+                        mname = attribute_options(name, str_path, attribute.name, group.name)
+                        attr_menus[attribute.name] = mname
+                    else:
+                        mname = attr_menus[attribute.name]
+                    row.menu(mname, icon="DOWNARROW_HLT")
+    except IndexError:
+        layout.label("No Pass")
 
 def attribute_options(name, path, attr, grp):
     if attr == "": is_grp = True 
@@ -168,6 +160,10 @@ def attribute_options(name, path, attr, grp):
         layout = self.layout
         
         op = layout.operator("attributes.remove", text = "Remove")
+        if is_grp:
+            op.type = "grp"
+        else:
+            op.type = "attr"
         op.path = path
         op.attr = attr
         op.grp = grp
@@ -204,63 +200,60 @@ def attribute_options(name, path, attr, grp):
                                                     "draw" : draw_attr_options})
     return mname
 
-def passes_linking_panel(name, str_path, BClass):
-    def draw_passes_linking(self, context):
-        path = eval(str_path)
-        layout = self.layout
-        row = layout.row()
-        col = row.column(align=True)
-        renderman_settings = context.scene.renderman_settings
+def passes_linking_layout(name, str_path, layout, scene):
+    path = eval(str_path)
+    row = layout.row()
+    col = row.column(align=True)
+    renderman_settings = scene.renderman_settings
 
-        if len(path.renderman) < 15:
-            rows = len(path.renderman)+1
-        else:
-            rows = 15
-        
-        passes_str_path = str_path+'.renderman'
-        col.template_list(path, "renderman", path, "renderman_index", rows=rows)
-        col = row.column(align = True)
-        col.operator("addpass", icon="ZOOMIN", text="").path = passes_str_path
-        col.operator("renderman.rempass", icon="ZOOMOUT", text ="").path = passes_str_path
-        ri = path.renderman_index
-        if ri < len(path.renderman) and ri >= 0:
-            curr_pass = path.renderman[path.renderman_index]
-            layout.prop(curr_pass, "name")
-        
-            col = layout.column(align=True)
-            box = col.box()
-            row = box.row(align=True)
-            row.label("Link to Pass:")
-                
-            op = row.operator("renderman.change_pass_linking", text="All")
-            op.path = passes_str_path
-            op.type = "all"
-            op = row.operator("renderman.change_pass_linking", text="None")
-            op.path = passes_str_path
-            op.type = "none"
-            op = row.operator("renderman.change_pass_linking", text="Invert")
-            op.path = passes_str_path
-            op.type = "invert"
-            op = row.operator("renderman.change_pass_linking", text="Active")
-            op.path = passes_str_path
-            op.type = "active"
-                                                
-            box = col.box()
-            for rpass in renderman_settings.passes:
-                row = box.row()
-                row.label(rpass.name)
-                op_col = row.column()
-                op_col.active = rpass.name in curr_pass.links
-                op = op_col.operator("renderman.link_pass", icon="FILE_TICK", emboss=False)
-                op.rpass = rpass.name
-                op.path = passes_str_path
+    if len(path.renderman) < 15:
+        rows = len(path.renderman)+1
+    else:
+        rows = 15
     
-    pname = 'Renderman_PT_'+name+'Passes_Linking_Panel'        
-    type(bpy.types.Panel)(pname, (bpy.types.Panel, BClass), {   "bl_label" : "Passes Linking",
-                                                                "COMPAT_ENGINES" : {'RENDERMAN'},
-                                                                "draw" : draw_passes_linking})
+    passes_str_path = str_path+'.renderman'
+    col.template_list(path, "renderman", path, "renderman_index", rows=rows)
+    col = row.column(align = True)
+    col.operator("addpass", icon="ZOOMIN", text="").path = passes_str_path
+    col.operator("renderman.rempass", icon="ZOOMOUT", text ="").path = passes_str_path
+    ri = path.renderman_index
+    if ri < len(path.renderman) and ri >= 0:
+        curr_pass = path.renderman[path.renderman_index]
+        layout.prop(curr_pass, "name")
+    
+        col = layout.column(align=True)
+        box = col.box()
+        row = box.row(align=True)
+        row.label("Link to Pass:")
+            
+        op = row.operator("renderman.change_pass_linking", text="All")
+        op.path = passes_str_path
+        op.type = "all"
+        op = row.operator("renderman.change_pass_linking", text="None")
+        op.path = passes_str_path
+        op.type = "none"
+        op = row.operator("renderman.change_pass_linking", text="Invert")
+        op.path = passes_str_path
+        op.type = "invert"
+        op = row.operator("renderman.change_pass_linking", text="Active")
+        op.path = passes_str_path
+        op.type = "active"
+                                            
+        box = col.box()
+        for rpass in renderman_settings.passes:
+            row = box.row()
+            row.label(rpass.name)
+            op_col = row.column()
+            op_col.active = rpass.name in curr_pass.links
+            op = op_col.operator("renderman.link_pass", icon="FILE_TICK", emboss=False)
+            op.rpass = rpass.name
+            op.path = passes_str_path
 
-def attr_preset_menu(name, path):    
+                                                        
+def attribute_menu(name, path, selected = False): ### create the attribute Menus
+    mtype = bpy.types.Menu
+
+    ## presets
     def draw_menu(self, context):
         rmansettings = context.scene.renderman_settings
         target_path = os.path.join(bpy.utils.preset_paths("renderman")[0], rmansettings.active_engine)
@@ -270,14 +263,6 @@ def attr_preset_menu(name, path):
                 op = self.layout.operator("attribute.load", text=p.replace("_", " "))
                 op.preset = p
                 op.path = path
-    
-    mname = "Renderman_MT_"+name+"_attributepresets"
-    type(bpy.types.Menu)(mname, (bpy.types.Menu,), {"bl_label" : "Presets",
-                                                    "draw" : draw_menu})
-
-                                                        
-def attribute_menu(name, path, selected = False): ### create the attribute Menus
-    mtype = bpy.types.Menu
 
     ## root menu
     def draw_root_menu(self, context):
@@ -319,14 +304,22 @@ def attribute_menu(name, path, selected = False): ### create the attribute Menus
            
     ##create menus
     ##attribute groups
-    mname = "Renderman_MT_addnewattribute_"+name      
-    type(mtype)(mname, (mtype,), {  "bl_label" : "New Attribute",
-                                    "draw" : draw_groups})
+    mname = "Renderman_MT_addnewattribute_"+name     
+    if not mname in dir(bpy.types): 
+        type(mtype)(mname, (mtype,), {  "bl_label" : "New Attribute",
+                                        "draw" : draw_groups})
                                             
     ##root menu
     mname = "Renderman_MT_"+name+"_attribute_menu"
-    type(mtype)(mname, (mtype,), {   "bl_label" : "",
+    if not mname in dir(bpy.types):
+        type(mtype)(mname, (mtype,), {  "bl_label" : "",
                                         "draw" : draw_root_menu})
+    
+    ## presets                                        
+    mname = "Renderman_MT_"+name+"_attributepresets"
+    if not mname in dir(bpy.types):
+        type(mtype)(mname, (mtype,), {  "bl_label" : "Presets",
+                                        "draw" : draw_menu})
         
         
 def dimensions_layout(layout, rc, scene):
@@ -364,11 +357,6 @@ class WorldButtonsPanel():
     def poll(cls, context):
         rd = context.scene.render
         return (context.world) and (not rd.use_game_engine) and (rd.engine in cls.COMPAT_ENGINES)
-
-
-bp = "bpy.context.scene.renderman_settings"
-p = bp+".passes["+bp+".passes_index]"
-attr_preset_menu("world", p)
 
 class World_PT_RendermanPassesPanel(WorldButtonsPanel, bpy.types.Panel):
     bl_label="Passes"    
@@ -442,10 +430,10 @@ class Render_PT_ImagershaderPanel(WorldButtonsPanel, bpy.types.Panel):
             active_pass = getactivepass(scene)
             layout = self.layout
             row = layout.row(align=True)
-            pathcollection = context.scene.renderman_settings.pathcollection
-            row.prop_search(active_pass, "imager_shader", pathcollection, "shadercollection", icon='MATERIAL', text="")
+            shaders = context.scene.renderman_settings.shaders
+            row.prop_search(active_pass, "imager_shader", shaders, "shadercollection", icon='MATERIAL', text="")
             row.operator("refreshshaderlist", text="", icon='FILE_REFRESH')            
-            checkshaderparameter("worldi", active_pass, active_pass.imager_shader, active_pass.imager_shader_parameter, scene)
+            
 
             layout.label(text=shader_info(active_pass.imager_shader, active_pass.imager_shader_parameter, scene))              
 
@@ -463,14 +451,13 @@ class World_PT_SurfaceShaderPanel(bpy.types.Panel, WorldButtonsPanel):
         active_pass = getactivepass(scene)
         layout = self.layout
         if active_pass:
-            pathcollection = context.scene.renderman_settings.pathcollection
+            shaders = context.scene.renderman_settings.shaders
     
             row = layout.row(align = True)
-            row.prop_search(active_pass.global_shader, "surface_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+            row.prop_search(active_pass.global_shader, "surface_shader", shaders, "shadercollection", text="", icon='MATERIAL')
             row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
             
             layout.label(text=shader_info(active_pass.global_shader.surface_shader, active_pass.global_shader.surface_shader_parameter, scene))
-            checkshaderparameter("worlds", active_pass, active_pass.global_shader.surface_shader, active_pass.global_shader.surface_shader_parameter, scene)
     
             matparmlayout(active_pass.global_shader.surface_shader_parameter, layout, bpy.data)
         else:
@@ -487,22 +474,34 @@ class World_PT_AtmosphereShaderPanel(bpy.types.Panel, WorldButtonsPanel):
         active_pass = getactivepass(scene)
         layout = self.layout
         if active_pass:
-            pathcollection = context.scene.renderman_settings.pathcollection
+            shaders = context.scene.renderman_settings.shaders
     
             row = layout.row(align = True)
-            row.prop_search(active_pass.global_shader, "atmosphere_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+            row.prop_search(active_pass.global_shader, "atmosphere_shader", shaders, "shadercollection", text="", icon='MATERIAL')
             row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
             
             layout.label(text=shader_info(active_pass.global_shader.atmosphere_shader, active_pass.global_shader.atmosphere_shader_parameter, scene))
-            checkshaderparameter("worlda", active_pass, active_pass.global_shader.atmosphere_shader, active_pass.global_shader.atmosphere_shader_parameter, scene)
+            
     
             matparmlayout(active_pass.global_shader.atmosphere_shader_parameter, layout, bpy.data)
         else:
             layout.label("No Render Pass")
 
-string = 'bpy.context.scene.renderman_settings.passes'
-string += '[bpy.context.scene.renderman_settings.passes_index]'
-attribute_panel("world", string, WorldButtonsPanel)
+
+class Renderman_PT_world_Attribute_Panel(bpy.types.Panel, WorldButtonsPanel):
+    bl_label = "Attributes"
+    
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        string = 'bpy.context.scene.renderman_settings.passes'
+        string += '[bpy.context.scene.renderman_settings.passes_index]'
+        
+        layout = self.layout
+        scene = context.scene
+        active_pass = getactivepass(scene)
+        if active_pass:
+            attribute_panel_layout("world", string, layout, scene)
                 
 
 class Renderman_PT_CustomWorldCodePanel(bpy.types.Panel, WorldButtonsPanel):
@@ -622,15 +621,12 @@ class Renderman_PT_Render(RenderButtonsPanel, bpy.types.Panel):
 class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Settings"
     bl_idname = "RenderSettingsPanel"
-    bl_default_closed = True
+    bl_options = 'DEFAULT_CLOSED'
 
     COMPAT_ENGINES = {'RENDERMAN'}
     
 
     def draw(self, context):
-        global maintaining
-        if not maintaining:
-            bpy.ops.renderman.maintain()
         scene = context.scene
         rmansettings = scene.renderman_settings
         layout = self.layout
@@ -783,7 +779,7 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
         if rmansettings.shader_expand:
             shader_box = col.box()
             row = shader_box.row()
-            row.template_list(scene.renderman_settings.pathcollection, "shaderpaths", scene.renderman_settings.pathcollection, "shaderpathsindex")
+            row.template_list(scene.renderman_settings.shaders, "shaderpaths", scene.renderman_settings.shaders, "shaderpathsindex")
             col = row.column()
             sub = col.column(align=True)
             sub.operator("pathaddrem", text="", icon="ZOOMIN").add = True
@@ -803,15 +799,7 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
             row = dir_box.row()
             col = row.column(align=True)    
             col.label(getdefaultribpath(scene)+"/...")
-            col.prop(scene.renderman_settings, "objectdir", text="Objects")
-            col.prop(scene.renderman_settings, "polydir", text="Poly Objects")
-            col.prop(scene.renderman_settings, "settingsdir", text="Settings")
-            col.prop(scene.renderman_settings, "worlddir", text="World")                          
-            col.prop(scene.renderman_settings, "polydir", text="Poly Meshs")
-            col.prop(scene.renderman_settings, "particledir", text="Particle Systems")
             col.prop(scene.renderman_settings, "texdir", text="Texture maps")
-            col.prop(scene.renderman_settings, "shadowdir", text="Shadowmaps")
-            col.prop(scene.renderman_settings, "envdir", text="Envmaps")
             col.prop(scene.renderman_settings, "bakedir", text="Bakefiles")
             row = dir_box.row(align=True)
             row.prop(scene.renderman_settings, "framepadding", text="Frame Padding")
@@ -827,7 +815,7 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
             mappings_box = col.box()
             row = mappings_box.row()
             mappings = rmansettings.mappings
-            pathcoll = rmansettings.pathcollection
+            pathcoll = rmansettings.shaders
             col = row.column(align=True)
             col.label("shadowmap parameters")
             col.prop(mappings, "point_shadowpref", text = "Point prefix")
@@ -879,57 +867,56 @@ class Renderman_MT_addPassMenu(bpy.types.Menu):
         layout = self.layout
         layout.operator("addpass", text="New").path = "bpy.context.scene.renderman_settings.passes"
         layout.menu("Renderman_MT_addPresetPass")
-        layout.operator("renderman.addpasspreset", text = "Save Preset")
-
+        layout.operator("renderman.addpasspreset", text = "Save Preset") 
 
 class Renderman_PT_RIB_Structure(bpy.types.Panel, RenderButtonsPanel):
     bl_label = "Rib Structure"
+    bl_options = 'DEFAULT_CLOSED'
     
     COMPAT_ENGINES = {'RENDERMAN'}
     
-    def draw_archive_panel(self, layout, p, name):
-        defaults = {"Settings" : "[pass]_Settings[frame]",
-                    "World" : "[pass]_World[frame]",
-                    "Object" : "[name][frame]",
-                    "Light" : "[name][frame]",
-                    "Mesh" :  "[name][frame]",
-                    "Particle System" : "[name][frame]",
-                    "Pass" : "[scene]_[pass][frame]",
-                    "Material" : "[name]_[pass][frame]"}
+    def draw_archive_panel(self, layout, context, pa, name):
+        rm = context.scene.renderman_settings
+        rs = rm.rib_structure
+        p = eval('rs.'+pa)
                 
         mcol = layout.column(align=True)
-        hbox = mcol.box()
-        row = hbox.row(align=True)
+        row = mcol.row(align=True)
         row.prop(p, "expand", text = "", icon = "TRIA_DOWN" if p.expand else "TRIA_RIGHT", emboss=False)
         row.label(name)
         if p.expand:
-            bbox = mcol.box()
-            bbox.prop(p, "own_file", text="Export to own Archive")
-            row = bbox.row()
+            row = mcol.row()
+            row.prop(p, "own_file", text="Export to own Archive")
+            row = mcol.row()
             row.enabled = p.own_file
             row.prop(p, "default_name")
-            col = row.column()
-            col.enabled = not p.default_name
-            col.prop(p, "filename", text="")
-            if p.filename == "" or p.filename == p.default_name: p.filename = defaults[name]
-            row.prop(p, "overwrite", text="")
-            row = layout.row()
+            row = mcol.row(align=True)
+            split = row.split(align=True, percentage = 0.7)
+            row.enabled = not p.default_name
+            split.prop(p, "filename", text="")
+            split.prop(p, "folder", text="")
+            row = mcol.row()
+            row.prop(p, "overwrite", text="overwrite existing")
+        return p.expand
         
     def draw(self, context):
-        rm = context.scene.renderman_settings
-        rs = rm.rib_structure
-        types = {   "Pass" : rs.render_pass,
-                    "Settings" : rs.settings,
-                    "World" : rs.world,
-                    "Object" : rs.objects,
-                    "Light" : rs.lights,
-                    "Mesh" : rs.meshes,
-                    "Particle System" : rs.particles,
-                    "Material" : rs.materials}
-                        
-        for t in types:
-            self.draw_archive_panel(self.layout, types[t], t)
-
+        dap = self.draw_archive_panel
+        lay = self.layout
+        col = lay.column()
+        pass_box = col.box()
+        if dap(pass_box, context, 'render_pass', "Passes"):
+            dap(pass_box, context, 'object_blocks', 'Instances')
+            dap(pass_box, context, 'settings', "Settings")
+            if dap(pass_box, context, 'world', 'Worlds'):
+                world_box = pass_box.box()
+                if dap(world_box, context, 'objects', 'Objects'):
+                    obj_box = world_box.box()
+                    dap(obj_box, context, 'materials', 'Materials')
+                dap(world_box, context, 'lights', 'Lights')
+                dap(world_box, context, 'particles', 'Particle Systems')
+        col.label("May be a child of Objects or Instances:")
+        mesh_box = col.box()
+        dap(mesh_box, context, 'meshes', 'Meshes')
             
 class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Passes"
@@ -941,6 +928,7 @@ class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
 
     def draw(self, context):
         scene = context.scene
+        bpy.ops.renderman.maintain()
         renderman_settings = scene.renderman_settings
         layout = self.layout
         row = layout.row()
@@ -1431,12 +1419,6 @@ class MaterialButtonsPanel():
 #        current_scene = bpy.context.scene
 #        self.layout.template_preview(context.material)    
 
-bp = "bpy.context.object.active_material"
-np = bp+'.name'
-rmp = bp+'.renderman['+bp+'.renderman_index]'
-
-passes_linking_panel("material", "bpy.context.object.active_material", MaterialButtonsPanel)
-
 class RENDERMAN_PT_context_material(MaterialButtonsPanel, bpy.types.Panel):
     bl_label = " "
     bl_show_header = False
@@ -1484,6 +1466,15 @@ class RENDERMAN_PT_context_material(MaterialButtonsPanel, bpy.types.Panel):
                 layout.template_ID(space, "pin_id")
 
 
+class Renderman_PT_Material_Passes(bpy.types.Panel, MaterialButtonsPanel):
+    bl_label = "Passes"
+    
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        passes_linking_layout("material", "bpy.context.object.active_material", self.layout, context.scene)
+        
+
 class RENDERMANMaterial_PT_MotionBlurPanel(MaterialButtonsPanel, bpy.types.Panel):
     bl_label = "MotionBlur"
 
@@ -1496,17 +1487,33 @@ class RENDERMANMaterial_PT_MotionBlurPanel(MaterialButtonsPanel, bpy.types.Panel
         apass = getactivepass(context.scene)
         if apass:
             m = context.material
-            mat = m.renderman[m.renderman_index]
-            row = layout.row()
-            col = row.column(align=True)
-            row.enabled = apass.motionblur
-            col.prop(mat, "color_blur")
-            col.prop(mat, "opacity_blur")
-            col.prop(mat, "shader_blur")
-            col = row.column()
-            col.prop(mat, "motion_samples")
+            try:
+                mat = m.renderman[m.renderman_index]
+                row = layout.row()
+                col = row.column(align=True)
+                row.enabled = apass.motionblur
+                col.prop(mat, "color_blur")
+                col.prop(mat, "opacity_blur")
+                col.prop(mat, "shader_blur")
+                col = row.column()
+                col.prop(mat, "motion_samples")
+            except IndexError:
+                layout.label("No Material Pass")
         else:
             layout.label("No Render Pass")
+
+class Renderman_OT_set_diffuse_color(bpy.types.Operator):
+    bl_label = "set diffuse color"
+    bl_idname =  "renderman.set_diffuse"
+    
+    mat = bpy.props.StringProperty()
+    color = bpy.props.FloatVectorProperty(subtype = 'COLOR')
+    
+    def execute(self, context):
+        mat = bpy.data.materials[self.mat]
+        col = self.color
+        mat.diffuse_color = col
+        return {'FINISHED'}
 
 
 class RENDERMANMaterial_PT_SurfaceShaderPanel(MaterialButtonsPanel, bpy.types.Panel):
@@ -1520,27 +1527,28 @@ class RENDERMANMaterial_PT_SurfaceShaderPanel(MaterialButtonsPanel, bpy.types.Pa
         scene = context.scene
         ##maintain(scene)
         m = context.object.active_material
-        mat = m.renderman[m.renderman_index]
-        layout = self.layout
-        pathcollection = context.scene.renderman_settings.pathcollection
+        if len(m.renderman) > m.renderman_index and m.renderman_index != -1:
+            mat = m.renderman[m.renderman_index]
+            layout = self.layout
+            shaders = context.scene.renderman_settings.shaders
 
-        row = layout.row(align = True)
-        col = row.column()
-        col.label(text="Color")
-        col.prop(mat, "color", text="")
-        context.object.active_material.diffuse_color = mat.color
-        col = row.column()
-        col.label(text="Opacity")
-        col.prop(mat, "opacity", text="")
+            row = layout.row(align = True)
+            col = row.column()
+            col.label(text="Color")
+            col.prop(mat, "color", text="")
+            bpy.ops.renderman.set_diffuse(color = mat.color, mat = m.name)
+            col = row.column()
+            col.label(text="Opacity")
+            col.prop(mat, "opacity", text="")
 
-        row= layout.row(align=True)
-        row.prop_search(mat, "surface_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
-        row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
-        
-        layout.label(text=shader_info(mat.surface_shader, mat.surface_shader_parameter, scene))
-        checkshaderparameter(context.object.active_material.name+"surf", mat, mat.surface_shader, mat.surface_shader_parameter, scene)
+            row= layout.row(align=True)
+            row.prop_search(mat, "surface_shader", shaders, "shadercollection", text="", icon='MATERIAL')
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            
+            layout.label(text=shader_info(mat.surface_shader, mat.surface_shader_parameter, scene))
+            
 
-        matparmlayout(mat.surface_shader_parameter, layout, context.object.active_material)
+            matparmlayout(mat.surface_shader_parameter, layout, context.object.active_material)
     
 
 class RENDERMANMaterial_PT_DisplacementShaderPanel(MaterialButtonsPanel, bpy.types.Panel):
@@ -1553,16 +1561,17 @@ class RENDERMANMaterial_PT_DisplacementShaderPanel(MaterialButtonsPanel, bpy.typ
         scene = context.scene
         ##maintain(scene)
         m = context.object.active_material
-        mat = m.renderman[m.renderman_index]
-        layout = self.layout
-        row = layout.row(align=True)
-        pathcollection = context.scene.renderman_settings.pathcollection
-        row.prop_search(mat, "displacement_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
-        row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
-        layout.label(text=shader_info(mat.displacement_shader, mat.disp_shader_parameter, scene))
-        checkshaderparameter(context.object.active_material.name+"disp", mat, mat.displacement_shader, mat.disp_shader_parameter, scene)
+        if len(m.renderman) > m.renderman_index and m.renderman_index != -1:
+            mat = m.renderman[m.renderman_index]
+            layout = self.layout
+            row = layout.row(align=True)
+            shaders = context.scene.renderman_settings.shaders
+            row.prop_search(mat, "displacement_shader", shaders, "shadercollection", text="", icon='MATERIAL')
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            layout.label(text=shader_info(mat.displacement_shader, mat.disp_shader_parameter, scene))
+            
 
-        matparmlayout(mat.disp_shader_parameter, layout, context.object.active_material) 
+            matparmlayout(mat.disp_shader_parameter, layout, context.object.active_material) 
     
 
 class RENDERMANMaterial_PT_InteriorShaderPanel(MaterialButtonsPanel, bpy.types.Panel):
@@ -1575,16 +1584,16 @@ class RENDERMANMaterial_PT_InteriorShaderPanel(MaterialButtonsPanel, bpy.types.P
         scene = context.scene
         ##maintain(scene)
         m = context.object.active_material
-        mat = m.renderman[m.renderman_index]
-        layout = self.layout
-        row = layout.row(align=True)
-        pathcollection = context.scene.renderman_settings.pathcollection
-        row.prop_search(mat, "interior_shader", pathcollection, "shadercollection", text="", icon="MATERIAL")
-        row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
-        layout.label(text=shader_info(mat.interior_shader, mat.interior_shader_parameter, scene))
-        checkshaderparameter(context.object.active_material.name+"int", mat, mat.interior_shader, mat.interior_shader_parameter, scene)
+        if len(m.renderman) > m.renderman_index and m.renderman_index != -1:
+            mat = m.renderman[m.renderman_index]
+            layout = self.layout
+            row = layout.row(align=True)
+            shaders = context.scene.renderman_settings.shaders
+            row.prop_search(mat, "interior_shader", shaders, "shadercollection", text="", icon="MATERIAL")
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            layout.label(text=shader_info(mat.interior_shader, mat.interior_shader_parameter, scene))
 
-        matparmlayout(mat.interior_shader_parameter, layout, context.object.active_material)
+            matparmlayout(mat.interior_shader_parameter, layout, context.object.active_material)
 
 
 class RENDERMANMaterial_PT_ExteriorShaderPanel(MaterialButtonsPanel, bpy.types.Panel):
@@ -1597,16 +1606,16 @@ class RENDERMANMaterial_PT_ExteriorShaderPanel(MaterialButtonsPanel, bpy.types.P
         scene = context.scene
         ##maintain(scene)
         m = context.object.active_material
-        mat = m.renderman[m.renderman_index]
-        layout = self.layout
-        row = layout.row(align=True)
-        pathcollection = context.scene.renderman_settings.pathcollection
-        row.prop_search(mat, "exterior_shader", pathcollection, "shadercollection", text="", icon="MATERIAL")
-        row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
-        layout.label(text=shader_info(mat.exterior_shader, mat.exterior_shader_parameter, scene))
-        checkshaderparameter(context.object.active_material.name+"ext", mat, mat.exterior_shader, mat.exterior_shader_parameter, scene)
+        if len(m.renderman) > m.renderman_index and m.renderman_index != -1:        
+            mat = m.renderman[m.renderman_index]
+            layout = self.layout
+            row = layout.row(align=True)
+            shaders = context.scene.renderman_settings.shaders
+            row.prop_search(mat, "exterior_shader", shaders, "shadercollection", text="", icon="MATERIAL")
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            layout.label(text=shader_info(mat.exterior_shader, mat.exterior_shader_parameter, scene))
 
-        matparmlayout(mat.exterior_shader_parameter, layout, context.object.active_material)
+            matparmlayout(mat.exterior_shader_parameter, layout, context.object.active_material)
         
 
 class RENDERMANMaterial_PT_AreaLightShaderPanel(MaterialButtonsPanel, bpy.types.Panel):
@@ -1619,16 +1628,16 @@ class RENDERMANMaterial_PT_AreaLightShaderPanel(MaterialButtonsPanel, bpy.types.
         scene = context.scene
         ##maintain(scene)
         m = context.object.active_material
-        mat = m.renderman[m.renderman_index]
-        layout = self.layout
-        row = layout.row(align=True)
-        pathcollection = context.scene.renderman_settings.pathcollection
-        row.prop_search(mat, "arealight_shader", pathcollection, "shadercollection", text="", icon="MATERIAL")
-        row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
-        layout.label(text=shader_info(mat.arealight_shader, mat.light_shader_parameter, scene))
-        checkshaderparameter(context.object.active_material.name+"al", mat, mat.arealight_shader, mat.light_shader_parameter, scene)
+        if len(m.renderman) > m.renderman_index and m.renderman_index != -1:
+            mat = m.renderman[m.renderman_index]
+            layout = self.layout
+            row = layout.row(align=True)
+            shaders = context.scene.renderman_settings.shaders
+            row.prop_search(mat, "arealight_shader", shaders, "shadercollection", text="", icon="MATERIAL")
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            layout.label(text=shader_info(mat.arealight_shader, mat.light_shader_parameter, scene))
 
-        matparmlayout(mat.light_shader_parameter, layout, context.object.active_material)
+            matparmlayout(mat.light_shader_parameter, layout, context.object.active_material)
 
 
         
@@ -1655,13 +1664,17 @@ class LightDataButtonsPanel():
     def poll(cls, context):
         rd = context.scene.render
         return (context.lamp) and (rd.engine in cls.COMPAT_ENGINES)
+
+
+class Renderman_PT_Light_Passes(bpy.types.Panel, LightDataButtonsPanel):
+    bl_label = "Passes"
     
-lbp = 'bpy.context.object.data'
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        lbp = 'bpy.context.object.data'
+        passes_linking_layout("light", lbp, self.layout, context.scene)    
 
-lnp = lbp+'.name'
-lrmp = lbp+'.renderman['+lbp+'.renderman_index]'
-
-passes_linking_panel("light", lbp, LightDataButtonsPanel)
 
 class LAMP_PT_RendermanLight(LightDataButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Settings"
@@ -1675,47 +1688,39 @@ class LAMP_PT_RendermanLight(LightDataButtonsPanel, bpy.types.Panel):
         light = context.object
         rc = light.renderman_camera
         scene = context.scene
-        lamp = light.data.renderman[light.data.renderman_index]
-        type = light.data.type
-        rmansettings = light.data.lightsettings
-        renderman = lamp
-        row = layout.row(align=True)
+        try:
+            lamp = light.data.renderman[light.data.renderman_index]
+            type = light.data.type
+            rmansettings = light.data.lightsettings
+            renderman = lamp
+            row = layout.row(align=True)
 
-        pathcollection = context.scene.renderman_settings.pathcollection
-        row.prop_search(lamp, "shaderpath", pathcollection, "shadercollection", text="")
-        row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
-        row.prop(lamp, "customshader", text="")
-        layout.label(text=shader_info(lamp.shaderpath, lamp.light_shader_parameter, scene))
-        checkshaderparameter(light.name, lamp, lamp.shaderpath, lamp.light_shader_parameter, scene)
-            
+            shaders = context.scene.renderman_settings.shaders
+            row.prop_search(lamp, "shaderpath", shaders, "shadercollection", text="")
+            row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
+            row.prop(lamp, "customshader", text="")
+            layout.label(text=shader_info(lamp.shaderpath, lamp.light_shader_parameter, scene))
 
-        layout.prop(rmansettings, "type")
+            layout.prop(rmansettings, "type")
 
-        matparmlayout(lamp.light_shader_parameter, layout, bpy.data)
-        if rmansettings.type == "spot":
-            context.object.data.type = "SPOT"
-
-        elif rmansettings.type == "point":
-            context.object.data.type = "POINT"
-
-        elif rmansettings.type == "directional":
-            context.object.data.type = "SUN"
-
-        layout.prop(lamp, "shadowtype")
-        row = layout.row()
-        row.enabled = lamp.shadowtype == "shadowmap"
-        row.prop(rmansettings, "shadowmaptype")
-
-        if lamp.shadowtype == "shadowmap":
-            if light.data.type == "SPOT":
-                context.object.data.shadow_method = "BUFFER_SHADOW"
-            dimensions_layout(layout, rc, scene)             
+            matparmlayout(lamp.light_shader_parameter, layout, bpy.data)
+        except IndexError:
+            layout.label("No Pass")
+        
+class Renderman_PT_light_Attribute_Panel(bpy.types.Panel, LightDataButtonsPanel):
+    bl_label = "Attributes"
     
-
- 
-
-
-
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        string = 'bpy.context.object.data.renderman'
+        string += '['+string+'_index]'
+        
+        layout = self.layout
+        scene = context.scene
+        active_pass = getactivepass(scene)
+        if active_pass:
+            attribute_panel_layout("light", string, layout, scene)
 
 ##################################################################################################################################
 
@@ -1725,12 +1730,6 @@ class LAMP_PT_RendermanLight(LightDataButtonsPanel, bpy.types.Panel):
 #                                                                                                       #
 #########################################################################################################
 
-p = "bpy.context.object.renderman"
-p += "["+p+"_index]"
-attr_preset_menu("object", p)
-
-
-
 class ObjectButtonsPanel():
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -1739,19 +1738,17 @@ class ObjectButtonsPanel():
     @classmethod
     def poll(cls, context):
         rd = context.scene.render
-        return (context.object) and (rd.engine in cls.COMPAT_ENGINES) and not (context.object.type in ["LAMP", "CAMERA"])
+        return (context.object) and (rd.engine in cls.COMPAT_ENGINES) and not (context.object.type in ["LAMP", "CAMERA"])  
+
+
+class Renderman_PT_Object_Passes(bpy.types.Panel, ObjectButtonsPanel):
+    bl_label = "Passes"
     
-class ObjectAttributesPanel():
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = "object"
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        passes_linking_layout("object", "bpy.context.object", self.layout, context.scene)    
 
-    @classmethod
-    def poll(cls, context):
-        rd = context.scene.render
-        return (context.object) and (rd.engine in cls.COMPAT_ENGINES) and not (context.object.type in ["CAMERA"])    
-
-passes_linking_panel("object", "bpy.context.object", ObjectButtonsPanel)
 
 class Object_PT_MotionBlurPanel(ObjectButtonsPanel, bpy.types.Panel):
     bl_label ="Motion Blur"
@@ -1806,12 +1803,20 @@ class Mesh_PT_IlluminatePanel(ObjectButtonsPanel, bpy.types.Panel):
             row.label(light.name)
             row.prop(light, "illuminate", icon='OUTLINER_OB_LAMP' if light.illuminate else 'LAMP', emboss=False, text="")
 
-
-name = "object"
-string = 'bpy.context.object.renderman'
-attribute_menu(name, string)
-string += '['+string+'_index]'
-attribute_panel(name, string, ObjectAttributesPanel)                
+class Renderman_PT_object_Attribute_Panel(bpy.types.Panel, ObjectButtonsPanel):
+    bl_label = "Attributes"
+    
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        string = 'bpy.context.object.renderman'
+        string += '['+string+'_index]'
+        
+        layout = self.layout
+        scene = context.scene
+        active_pass = getactivepass(scene)
+        if active_pass:
+            attribute_panel_layout("object", string, layout, scene)             
 
 class Mesh_PT_GeneralSettings(ObjectButtonsPanel, bpy.types.Panel):
     bl_label ="General Settings"
@@ -1975,13 +1980,17 @@ class ParticleButtonsPanel():
     @classmethod
     def poll(cls, context):
         return properties_particle.particle_panel_poll(cls, context)
+
+
+class Renderman_PT_Particle_Passes(bpy.types.Panel, ParticleButtonsPanel):
+    bl_label = "Passes"
     
-obp = "bpy.context.particle_system"
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        obp = "bpy.context.particle_system"
+        passes_linking_layout("particle", obp+'.settings', self.layout, context.scene)     
 
-onp = obp+'.name'
-ormp = obp+'.settings.renderman['+obp+'.renderman_index]'  
-
-passes_linking_panel("particle", obp+'.settings', ParticleButtonsPanel)
 
 class Renderman_PT_ParticleMBPanel(bpy.types.Panel, ParticleButtonsPanel):
     bl_label = "Motion Blur"
@@ -2009,7 +2018,7 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
         active_pass = getactivepass(scene)
         layout = self.layout
         if active_pass:
-            pathcollection = context.scene.renderman_settings.pathcollection
+            shaders = context.scene.renderman_settings.shaders
             
             psystem = context.particle_system
             obj = context.object
@@ -2027,11 +2036,10 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
                 if rman.surface_expand:
                     surf_box = col.box()
                     row = surf_box.row(align = True)
-                    row.prop_search(rman.shaders, "surface_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+                    row.prop_search(rman.shaders, "surface_shader", shaders, "shadercollection", text="", icon='MATERIAL')
                     row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
                     
                     surf_box.label(text=shader_info(rman.shaders.surface_shader, rman.shaders.surface_shader_parameter, scene))
-                    checkshaderparameter(obj.name+psystem.name+"surf", active_pass, rman.shaders.surface_shader, rman.shaders.surface_shader_parameter, scene)
         
                     matparmlayout(rman.shaders.surface_shader_parameter, surf_box, bpy.data)
                 
@@ -2046,11 +2054,10 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
                 if rman.disp_expand:
                     disp_box = col.box()
                     row = disp_box.row(align = True)
-                    row.prop_search(rman.shaders, "displacement_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+                    row.prop_search(rman.shaders, "displacement_shader", shaders, "shadercollection", text="", icon='MATERIAL')
                     row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
                     
                     disp_box.label(text=shader_info(rman.shaders.displacement_shader, rman.shaders.disp_shader_parameter, scene))
-                    checkshaderparameter(obj.name+psystem.name+"disp", active_pass, rman.shaders.displacement_shader, rman.shaders.disp_shader_parameter, scene)
         
                     matparmlayout(rman.shaders.disp_shader_parameter, disp_box, bpy.data)
                 
@@ -2065,11 +2072,11 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
                 if rman.interior_expand:
                     int_box = col.box()
                     row = int_box.row(align = True)
-                    row.prop_search(rman.shaders, "interior_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+                    row.prop_search(rman.shaders, "interior_shader", shaders, "shadercollection", text="", icon='MATERIAL')
                     row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
                     
                     int_box.label(text=shader_info(rman.shaders.interior_shader, rman.shaders.interior_shader_parameter, scene))
-                    checkshaderparameter(obj.name+psystem.name+"int", active_pass, rman.shaders.interior_shader, rman.shaders.interior_shader_parameter, scene)
+                    
         
                     matparmlayout(rman.shaders.interior_shader_parameter, int_box, bpy.data)
                 
@@ -2083,11 +2090,11 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
                 if rman.exterior_expand:
                     ext_box = col.box()
                     row = ext_box.row(align = True)
-                    row.prop_search(rman.shaders, "exterior_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+                    row.prop_search(rman.shaders, "exterior_shader", shaders, "shadercollection", text="", icon='MATERIAL')
                     row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
                     
                     ext_box.label(text=shader_info(rman.shaders.exterior_shader, rman.shaders.exterior_shader_parameter, scene))
-                    checkshaderparameter(obj.name+psystem.name+"ext", active_pass, rman.shaders.exterior_shader, rman.shaders.exterior_shader_parameter, scene)
+                    
         
                     matparmlayout(rman.shaders.exterior_shader_parameter, ext_box, bpy.data)
                 
@@ -2101,11 +2108,11 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
                 if rman.arealight_expand:
                     area_box = col.box()
                     row = area_box.row(align = True)
-                    row.prop_search(rman.shaders, "arealight_shader", pathcollection, "shadercollection", text="", icon='MATERIAL')
+                    row.prop_search(rman.shaders, "arealight_shader", shaders, "shadercollection", text="", icon='MATERIAL')
                     row.operator("refreshshaderlist", text="", icon="FILE_REFRESH")
                     
                     area_box.label(text=shader_info(rman.shaders.arealight_shader, rman.shaders.light_shader_parameter, scene))
-                    checkshaderparameter(obj.name+psystem.name+"area", active_pass, rman.shaders.arealight_shader, rman.shaders.light_shader_parameter, scene)
+                    
         
                     matparmlayout(rman.shaders.light_shader_parameter, area_box, bpy.data)  
                     
@@ -2124,15 +2131,22 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
 
 
 ### Attributes
-name = "particle"
-string = 'bpy.context.particle_system.settings.renderman'      
-attribute_menu(name, string)
+class Renderman_PT_particles_Attribute_Panel(bpy.types.Panel, ParticleButtonsPanel):
+    bl_label = "Attributes"
+    
+    COMPAT_ENGINES = {'RENDERMAN'}
+    
+    def draw(self, context):
+        string = 'bpy.context.particle_system.settings.renderman'      
 
-i = string+'_index'
-string += '['+i+']'
-attribute_panel(name, string, ParticleButtonsPanel)
+        i = string+'_index'
+        string += '['+i+']'
+        
+        layout = self.layout
+        scene = context.scene
+        if context.particle_system:
+            attribute_panel_layout("particles", string, layout, scene)
 
-attr_preset_menu(name, string)
 
 ##################################################################################################################################
 
@@ -2186,12 +2200,12 @@ class Renderman_PT_RendermanShaderPanel(bpy.types.Panel):
 #      3D View                                                                                          #
 #                                                                                                       #
 #########################################################################################################
-attribute_menu("obj_selected", "", selected = True)
 
 class Renderman_MT_object_specials(bpy.types.Menu):
     bl_label = "Renderman"
     
     def draw(self, context):
+        attribute_menu('obj_selected', '', selected = True)
         self.layout.menu("Renderman_MT_obj_selected_attribute_menu", text="Attributes")
         self.layout.menu("Renderman_MT_LightLinking")
         

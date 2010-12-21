@@ -51,8 +51,8 @@ if "bpy" in locals():
     reload(export)
 else:
     import export_renderman
-    import export_renderman.rm_props
     import export_renderman.ops
+    from export_renderman.ops import *
     import export_renderman.rm_maintain
     from export_renderman.rm_maintain import *
     import export_renderman.ui
@@ -180,16 +180,13 @@ class Renderman_OT_Render(bpy.types.Operator):
         scene = context.scene
         path = getdefaultribpath(scene)        
         checkpaths(path)
-        checkpaths(os.path.join(path, scene.renderman_settings.polydir))
-        checkpaths(os.path.join(path, scene.renderman_settings.shadowdir))
-        checkpaths(os.path.join(path, scene.renderman_settings.envdir))
         checkpaths(os.path.join(path, scene.renderman_settings.texdir))
         if self.anim:
-            for i in range(scene.frame_start, scene.frame_end+scene.frame_step, scene.frame_step):
+            for i in range(context.frame_start, scene.frame_end+scene.frame_step, scene.frame_step):
                 scene.frame_set(i)
                 render(scene)
         else:
-            render(scene)
+            render(context)
         return{'FINISHED'}   
 
 def image(name, scene): return name.replace("[frame]", framepadding(scene))
@@ -234,12 +231,13 @@ def start_render(render, ribfile, current_pass, scene):
             if not img in bpy.data.images and not disp.displaydriver == "framebuffer":
                 bpy.data.images.load(img) 
        
-def render(scene):
+def render(context):
+    scene = context.scene
     rndr = scene.renderman_settings.renderexec
     rm = scene.renderman_settings
     rs = rm.rib_structure    
     if rndr != "":
-        maintain(scene)
+        maintain(context)
         path = getdefaultribpath(scene)
                                              
         active_pass = getactivepass(scene)
@@ -249,12 +247,10 @@ def render(scene):
 
         if scene.renderman_settings.exportallpasses:
             for item in scene.renderman_settings.passes:
-                global current_pass
-                current_pass = item
                 imagefolder = os.path.join(path, item.imagedir)
                 checkForPath(imagefolder)            
                 name = getname( rs.render_pass.filename,
-                                item.name,
+                                pass_name = item.name,
                                 sce = scene)+'.rib'
                 rib = os.path.join(path, name)
 
@@ -266,7 +262,7 @@ def render(scene):
 
                 exported_instances = []
 
-                export(rib, scene)
+                export.export(rib, item, scene)
 
                 if not scene.renderman_settings.exportonly:
                     if rndr != "" and not item.environment:                            
@@ -276,7 +272,7 @@ def render(scene):
             exported_instances = []
 
 
-            export(active_pass, path, scene)
+            export.export(active_pass, path, scene)
             imagefolder = os.path.join(path, active_pass.imagedir)
             checkpaths(imagefolder)
             ribfilename = active_pass.name+framepadding(scene)+".rib"
@@ -499,7 +495,7 @@ class RendermanRender(bpy.types.RenderEngine):
 ##################################################################################################################################
 
 def register():
-    export_renderman.rm_maintain.reg_maintain()
+    import export_renderman.rm_props
     bpy.types.VIEW3D_MT_object_specials.append(draw_obj_specials_rm_menu)
     
     

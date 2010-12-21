@@ -31,7 +31,14 @@
 #Thanks to: Campbell Barton, Eric Back, Nathan Vegdahl
 
 import bpy
+import math
+import mathutils
+import os
+import tempfile
+import subprocess
 import export_renderman
+import export_renderman.ops
+from export_renderman.ops import *
 
 String = bpy.props.StringProperty
 Bool = bpy.props.BoolProperty
@@ -58,7 +65,7 @@ pass_disp_len = {}
 ##################################################################################################################################
 #   the fun par begins here:                                                                                                     #
 ##################################################################################################################################
-
+is_running = False
 class Renderman_OT_modal(bpy.types.Operator):
     bl_idname = 'renderman.maintain'
     bl_label ="maintain renderman"
@@ -67,12 +74,15 @@ class Renderman_OT_modal(bpy.types.Operator):
         scene = context.scene
         #print("Blender to Renderman Addon Loaded")
         if scene.render.engine == 'RENDERMAN':
-            maintain(scene)
+            maintain(context)
         return {'PASS_THROUGH'}
                 
     def execute(self, context):
-        print("started maintain operator")
-        context.window_manager.add_modal_handler(self)
+        wm = context.window_manager
+        global is_running
+        if not is_running:
+            context.window_manager.modal_handler_add(self)
+            is_running = True
         return {'RUNNING_MODAL'}
 
 #########################################################################################################
@@ -122,13 +132,13 @@ def framepadding(scene):
     return frame
 
 def shader_info(shader, collection, scene):
-    pathcollection = scene.renderman_settings.pathcollection
-    shadercollection = pathcollection.shadercollection
-    shaderpaths = pathcollection.shaderpaths
+    shaders = scene.renderman_settings.shaders
+    shadercollection = shaders.shadercollection
+    shaderpaths = shaders.shaderpaths
     if len(shaderpaths) >= 1:
         if len(shadercollection) >= 1:
             if shader:
-                info = pathcollection.shadercollection[shader].fullpath
+                info = shaders.shadercollection[shader].fullpath
             else:
                 info="No shader selected"
         else:
@@ -408,13 +418,11 @@ def maintain_searchpaths(current_pass, scene):
         copy_parameter(slave, searchpath_option)
     
     texpath = os.path.join(getdefaultribpath(scene), rmansettings.texdir)        ##texture searchpath
-    shadowpath = os.path.join(getdefaultribpath(scene), rmansettings.shadowdir)
-    envpath = os.path.join(getdefaultribpath(scene), rmansettings.envdir)
-    maintain_searchpath('texture', texpath+':'+shadowpath+':'+envpath)                    
+    maintain_searchpath('texture', texpath)                    
 
-    if rmansettings.pathcollection.shaderpaths:                             ##shader searchpath
+    if rmansettings.shaders.shaderpaths:                             ##shader searchpath
         shader_path_value = ""
-        for shader_path in rmansettings.pathcollection.shaderpaths:
+        for shader_path in rmansettings.shaders.shaderpaths:
             shader_path_value += check_env(shader_path.name)+':'
     else:
         shader_path_value = ''
@@ -545,7 +553,7 @@ def maintain_beauty_pass(scene):
         renderman_settings.passes.add().name = 'Beauty'
     beauty = renderman_settings.passes[0]
     if not beauty.displaydrivers:
-        adddisp(beauty)
+        export_renderman.ops.adddisp(beauty)
         
     if renderman_settings.passes:
         if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
@@ -559,6 +567,7 @@ def maintain_beauty_pass(scene):
 def atleast_one_pass(path):
     if not path.renderman:
         path.renderman.add().name = "Beauty"
+        path.renderman['Beauty'].links.add().name = 'Beauty'
     if path.renderman_index == -1 or path.renderman_index > len(path.renderman)-1:
         path.renderman_index = 0
     
@@ -674,6 +683,7 @@ def maintain_shadowmap_passes(obj, scene):
 def maintain_light(light, scene):
     if light.type == "LAMP":
         rc = light.renderman_camera
+        ls = light.data.lightsettings
         global obj_passes, assigned_shaders
         rm = light.data.renderman
         if not light.name in obj_passes or len(rm) != obj_passes[light.name]:
@@ -695,9 +705,9 @@ def maintain_light(light, scene):
             elif lpass.shadowtype == 'raytrace':
                 shadowname = ""
                 shadowmapname = "raytrace"
-            type = light.data.type
+            type = ls.type
             
-            if type == "SPOT":
+            if type == 'spot':
                 if light.data.shadow_method == "BUFFER_SHADOW":
                     light.data.shadow_buffer_clip_start = rc.near_clipping
                     light.data.shadow_buffer_clip_end = rc.far_clipping
@@ -737,7 +747,8 @@ def maintain_light(light, scene):
             
             mappings = scene.renderman_settings.mappings
             
-            if type == 'POINT':
+            if type == 'point':
+                light.data.type = 'POINT'
                 dirs = ["px", "nx", "py", "ny", "pz", "nz"]
                 if lpass.shadowtype == "shadowmap":
                     if not lpass.customshader:
@@ -760,7 +771,8 @@ def maintain_light(light, scene):
                 if "intensity" in active_parameter:
                     light.data.energy = active_parameter["intensity"].float_one[0]
             
-            elif type == 'SPOT':
+            elif type == 'spot':
+                light.data.type = 'SPOT'
                 if lpass.shadowtype == "shadowmap" or lpass.shadowtype == "raytrace":
                     if not lpass.customshader:
                         lpass.shaderpath = mappings.shadowspotshader
@@ -783,7 +795,8 @@ def maintain_light(light, scene):
                 maintainitem("to", [0, 0, -1])
                 maintainitem("from", [0, 0, 0])                
             
-            elif type == 'SUN':
+            elif type == 'directional':
+                light.data.type = 'SUN'
                 if lpass.shadowtype == "shadowmap":
                     if not lpass.customshader:
                         lpass.shaderpath = mappings.shadowdistantshader
@@ -842,7 +855,7 @@ class Renderman_OT_set_Active_Camera(bpy.types.Operator):
     cam = String()
     
     def execute(self, context):
-        context.scene.camera = context.scene.objects[cam]
+        context.scene.camera = context.scene.objects[self.cam]
         return {'FINISHED'}
 
 def maintain_camera(rpass, scene):
@@ -857,24 +870,79 @@ def maintain_camera(rpass, scene):
         rd.resolution_y = rc.resy
         bpy.ops.renderman.set_active_camera(cam = apass_cam_name)
 
-def maintain_rib_struct(scene):
+def maintain_rib_structure(scene):
     rm = scene.renderman_settings
     rs = rm.rib_structure
-    rs.objects.folder = rm.objectdir
-    rs.lights.folder = rm.lightdir
-    rs.settings.folder = rm.settingsdir
-    rs.world.folder =  rm.worlddir
-    rs.particles.folder = rm.particledir
-            
+    
+    types = {   rs.render_pass : "[scene]_[pass][frame]",
+                rs.settings : "[pass]_Settings[frame]",
+                rs.world : "[pass]_World[frame]",
+                rs.objects : "[name]_[pass][frame]",
+                rs.lights : "[name]_[pass][frame]",
+                rs.meshes : "[name]_[pass][frame]",
+                rs.particles : "[name]_[pass][frame]",
+                rs.materials : "[name]_[pass][frame]",
+                rs.object_blocks : "instances_[pass][frame]"}
+    
+    for p in types:            
+        if p.filename == "" or p.default_name:
+            p.filename = types[p]
 
-def maintain(scene):
-    pathcoll = scene.renderman_settings.pathcollection
+def maintain_assigned_shaders(context):
+    ap = getactivepass(context.scene)
+    gs = ap.global_shader
+    cs = checkshaderparameter
+    world_shaders = (   ("worldi", ap, ap.imager_shader, ap.imager_shader_parameter),
+                        ("worlds", ap, gs.surface_shader, gs.surface_shader_parameter),
+                        ("worlda", ap, gs.atmosphere_shader, gs.atmosphere_shader_parameter))
+    for ws in world_shaders:
+        cs(ws[0], ws[1], ws[2], ws[3], context.scene)
+    
+    ob = context.object                    
+    if ob:
+        if not ob.type in ['LAMP', 'CAMERA', 'EMPTY', 'LATTICE', 'ARMATURE']:
+            am = ob.active_material
+            if am:
+                rm = am.renderman[am.renderman_index]
+                obm_shd = ( (am.name+"surf", rm, rm.surface_shader, rm.surface_shader_parameter),
+                            (am.name+"disp", rm, rm.displacement_shader, rm.disp_shader_parameter),
+                            (am.name+"int", rm, rm.interior_shader, rm.interior_shader_parameter),
+                            (am.name+"ext", rm, rm.exterior_shader, rm.exterior_shader_parameter),
+                            (am.name+"al", rm, rm.arealight_shader, rm.light_shader_parameter))
+                for os in obm_shd:
+                    cs(os[0], os[1], os[2], os[3], context.scene)
+                    
+            if ob.particle_systems:
+                for p in ob.particle_systems:
+                    rm = p.settings.renderman[p.settings.renderman_index]
+                    pshad = (   (ob.name+p.name+"surf", rm, rm.shaders.surface_shader, rm.shaders.surface_shader_parameter),
+                                (ob.name+p.name+"disp", rm, rm.shaders.displacement_shader, rm.shaders.disp_shader_parameter),
+                                (ob.name+p.name+"int", rm, rm.shaders.interior_shader, rm.shaders.interior_shader_parameter),
+                                (ob.name+p.name+"ext", rm, rm.shaders.exterior_shader, rm.shaders.exterior_shader_parameter),
+                                (ob.name+p.name+"area", rm, rm.shaders.arealight_shader, rm.shaders.light_shader_parameter))
+                    for ps in pshad:
+                        cs(ps[0], ps[1], ps[2], ps[3], context.scene)
+                    
+        elif context.object.type == 'LAMP':
+            l = context.object
+            ld = l.data
+            try:
+                rm = ld.renderman[l.renderman_index]
+                cs(l.name, rm, rm.shaderpath, rm.light_shader_parameter, context.scene) 
+            except IndexError:
+                pass
+
+def maintain(context):
+    scene = context.scene
+    pathcoll = scene.renderman_settings.shaders
     if pathcoll.shaderpaths and not pathcoll.shadercollection:
         checkshadercollection(scene)
     
     maintain_beauty_pass(scene)
     
-    maintain_lists(scene)          
+    maintain_lists(scene)
+    maintain_assigned_shaders(context)
+    maintain_rib_structure(scene)    
 
     for i, rpass in enumerate(scene.renderman_settings.passes):
         maintain_camera(rpass, scene)
@@ -915,10 +983,10 @@ def checkextension(file):
     return file_extension    
 
 def checkshadercollection(scene):
-    pathcollection = scene.renderman_settings.pathcollection
+    shaders = scene.renderman_settings.shaders
 
-    for shader in pathcollection.shadercollection:
-        pathcollection.shadercollection.remove(0)
+    for shader in shaders.shadercollection:
+        shaders.shadercollection.remove(0)
 
     shadbin = scene.renderman_settings.shaderbinary
 
@@ -926,20 +994,20 @@ def checkshadercollection(scene):
         for item in os.listdir(path):
             fullpath = os.path.join(path, item)
             shadext = checkextension(item)
-            if pathcollection.shadercollection:
+            if shaders.shadercollection:
                 exist = False
-                for shader in pathcollection.shadercollection:
+                for shader in shaders.shadercollection:
                     if fullpath == shader.fullpath:
                         exist = True
 
                 if not exist and shadext == shadbin:
-                    pathcollection.shadercollection.add().fullpath = fullpath
+                    shaders.shadercollection.add().fullpath = fullpath
             else:
                 if shadext and shadext == shadbin:
-                    pathcollection.shadercollection.add().fullpath = fullpath
+                    shaders.shadercollection.add().fullpath = fullpath
 
 
-    for path in pathcollection.shaderpaths:
+    for path in shaders.shaderpaths:
         checked_subdirs = []
         path_name = check_env(path.name)
         if os.path.exists(path_name):
@@ -967,7 +1035,7 @@ def checkshadercollection(scene):
                         current_path = path_name
 
     
-    for item in pathcollection.shadercollection:
+    for item in shaders.shadercollection:
         if item.name == "":
             item.name = os.path.split(item.fullpath)[1].replace('.'+shadbin, '')
 
@@ -1008,8 +1076,16 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
         elif parameter[2] == "string":
             value = value.replace('"', "")
             value = value.replace(" ", "")
+            value = value.replace("\t", "")
+            value = value.replace("\n", "")
             ap.textparameter = value
-             
+
+    def write_shaderinfo(shader_path, tmp_path):
+        file = open(tmp_path, "w")
+        subprocess.Popen([shadinfo, shader_path], stdout=file).communicate()
+        file.close()
+        readparms()
+
     def readparms():
         parameters = []
         values = []
@@ -1094,7 +1170,7 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
             current_shader[active_pass.name] = shader
         return current_shader
 
-    shadercollection = scene.renderman_settings.pathcollection.shadercollection
+    shadercollection = scene.renderman_settings.shaders.shadercollection
     if not shader or not shadercollection:
         clear_shader_parameter(shader_parameter)
         return 0
@@ -1105,39 +1181,30 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
     tmpfilename = shader+".tmp"
     fulltmpname = os.path.join(tmpdir, tmpfilename)
     mod_time = shadercollection[shader].mod_time       
-    
+        
+    ###### Binary Shader
     try:
         fullshaderpath = shadercollection[shader].fullpath
     except:
         fullshaderpath = ""      
         clear_shader_parameter(shader_parameter)
-    
-    ###### Binary Shader
-    if fullshaderpath:          
-
-        modtime_new = math.floor(os.path.getmtime(fullshaderpath))
-
-        if modtime_new != mod_time:
-            scene.renderman_settings.pathcollection.shadercollection[shader].mod_time = modtime_new
-            
-            file = open(fulltmpname, "w")
-            subprocess.Popen([shadinfo, fullshaderpath], stdout=file).communicate()
-            file.close()
-            readparms()
-            
-        if not identifier in assigned_shaders or assigned_shaders[identifier] != check_curr_shader(assigned_shaders[identifier]):
-            cs = check_curr_shader({})
-            assigned_shaders[identifier] = cs
+        
+    if fullshaderpath:
+        if not os.path.exists(fulltmpname):
+            write_shaderinfo(fullshaderpath, fulltmpname)
+        else:
+            modtime_new = math.floor(os.path.getmtime(fullshaderpath))
+            scene.renderman_settings.shaders.shadercollection[shader].mod_time = modtime_new
+            if modtime_new != mod_time:
+                write_shaderinfo(fullshaderpath, fulltmpname)
+                
+            if not identifier in assigned_shaders or assigned_shaders[identifier] != check_curr_shader(assigned_shaders[identifier]):
+                cs = check_curr_shader({})
+                assigned_shaders[identifier] = cs
                 
     sort_collection(shader_parameter)                   
 
 ##################################################################################################################################
-
-def reg_maintain():
-    bpy.ops.renderman.maintain()
-    
-def unregister():
-    pass
 
 
     

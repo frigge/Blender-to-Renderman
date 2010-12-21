@@ -1052,8 +1052,8 @@ bpy.context.scene.renderman_settings.attribute_groups["visibility"].attributes["
 bpy.context.scene.renderman_settings.attribute_groups["visibility"].attributes["transmission"].int_three[0] = 0
 bpy.context.scene.renderman_settings.attribute_groups["visibility"].attributes["transmission"].int_three[1] = 0
 bpy.context.scene.renderman_settings.attribute_groups["visibility"].attributes["transmission"].int_three[2] = 0
-if not "$PIXIEHOME/shaders" in bpy.context.scene.renderman_settings.pathcollection.shaderpaths:
-	bpy.context.scene.renderman_settings.pathcollection.shaderpaths.add().name = "$PIXIEHOME/shaders"
+if not "$PIXIEHOME/shaders" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
+	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "$PIXIEHOME/shaders"
 if not "hidden" in bpy.context.scene.renderman_settings.hider_list:
 	bpy.context.scene.renderman_settings.hider_list.add().name = "hidden"
 if not "depthfilter" in bpy.context.scene.renderman_settings.hider_list["hidden"].options:

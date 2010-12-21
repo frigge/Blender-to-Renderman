@@ -67,7 +67,7 @@ def checkForPath(target_path): # create Presetsdirecory if not found
 def clear_collections(scene):
     if scene == None: scene = bpy.context.scene
     rmansettings = scene.renderman_settings
-    shaderpaths = rmansettings.pathcollection.shaderpaths
+    shaderpaths = rmansettings.shaders.shaderpaths
     attributes = rmansettings.attribute_groups
     options = rmansettings.option_groups
     hiders = rmansettings.hider_list
@@ -171,7 +171,7 @@ class AddPresetRenderer(bpy.types.Operator):
         option_groups = rmansettings.option_groups
         attribute_groups = rmansettings.attribute_groups
         hider_list = rmansettings.hider_list
-        shaderpaths = rmansettings.pathcollection.shaderpaths
+        shaderpaths = rmansettings.shaders.shaderpaths
         
         def parmgroups(group):      
             parmprops = [   ".parametertype", 
@@ -222,7 +222,7 @@ class AddPresetRenderer(bpy.types.Operator):
         parmgroups("attribute_groups")
         
         ##shaderpath presets:
-        s_path = "bpy.context.scene.renderman_settings.pathcollection.shaderpaths"
+        s_path = "bpy.context.scene.renderman_settings.shaders.shaderpaths"
         for path in shaderpaths:
             write('if not "'+path.name+'" in '+s_path+':\n')
             write('\t'+s_path+'.add().name = "'+path.name+'"\n')
@@ -1234,36 +1234,15 @@ class Renderman_OT_addnew_Attribute(bpy.types.Operator):
         print(self.attr)
         return {'FINISHED'}
     
-        
-def removeattrop(name, path):
-    def invoke(self, context, event):
-        p = eval(path)
-        p = p[eval(path+'_index')]
-        for grp in p.attribute_groups:
-            p.attribute_groups.remove(0)
-        return {'FINISHED'}
-    
-    oname = "Renderman_OT_"+name+"_attributes_remove_all"
-    oidname = "attributes."+name+"_remove_all"
-       
-    type(bpy.types.Operator)(oname, ((bpy.types.Operator),), {  "bl_label" : "Remove All",
-                                                                "bl_idname" : oidname,
-                                                                "bl_description" : "remove all attributes",
-                                                                "path" : String(),
-                                                                "invoke" : invoke})
-
-remops = {  "world" : "bpy.context.scene.renderman_settings.passes",
-            "object" : "bpy.context.object.renderman",
-            "particle" : "bpy.context.particle_system.settings.renderman"}
-                
-for op in remops:
-    removeattrop(op, remops[op])
 
 class Renderman_OT_remove_Attribute(bpy.types.Operator):
     bl_label = ""
     bl_idname = "attributes.remove"
     bl_description = "remove attribute"
     
+    type = bpy.props.EnumProperty(default = "all", items = (("all", "All", ""),
+                                                            ("grp", "Group", ""),
+                                                            ("attr", "Attribute", "")))
     grp = String()
     attr = String()
     path = String()
@@ -1275,9 +1254,15 @@ class Renderman_OT_remove_Attribute(bpy.types.Operator):
             print(self.path)
             raise
         grps = path.attribute_groups
-        grp = grps[self.grp]
+        if self.grp != "":
+            grp = grps[self.grp]
         
-        if self.attr != "":
+        type = self.type
+        if type == "all":
+            for g in grps:
+                grps.remove(0)
+                
+        elif type == "attr":
             for i, a in enumerate(grp.attributes):
                 if a.name == self.attr:
                     grp.attributes.remove(i)
@@ -1604,14 +1589,14 @@ class Renderman_OT_Shaderpaths(bpy.types.Operator):
 
     def invoke(self, context, event):
         scene = context.scene
-        pathcollection = context.scene.renderman_settings.pathcollection
+        shaders = context.scene.renderman_settings.shaders
         if self.add:
-            pathcollection.shaderpaths.add().name = context.scene.renderman_settings.shaderpath
+            shaders.shaderpaths.add().name = context.scene.renderman_settings.shaderpath
             checkshadercollection(context.scene)
 
         elif not self.add:
-            index = pathcollection.shaderpathsindex
-            pathcollection.shaderpaths.remove(index)
+            index = shaders.shaderpathsindex
+            shaders.shaderpaths.remove(index)
 
         return {'FINISHED'}
 
