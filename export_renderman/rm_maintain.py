@@ -564,10 +564,13 @@ def maintain_beauty_pass(scene):
                     renderman_settings.passes_index = i
                     renderman_settings.searchpass = ""   
         
-def atleast_one_pass(path):
+def atleast_one_pass(path, rmpasses):
     if not path.renderman:
         path.renderman.add().name = "Beauty"
-        path.renderman['Beauty'].links.add().name = 'Beauty'
+    if len(path.renderman) == 1:
+        for rpass in rmpasses:
+            if not rpass.name in path.renderman[0].links:
+                path.renderman[0].links.add().name = rpass.name
     if path.renderman_index == -1 or path.renderman_index > len(path.renderman)-1:
         path.renderman_index = 0
     
@@ -874,19 +877,21 @@ def maintain_rib_structure(scene):
     rm = scene.renderman_settings
     rs = rm.rib_structure
     
-    types = {   rs.render_pass : "[scene]_[pass][frame]",
-                rs.settings : "[pass]_Settings[frame]",
-                rs.world : "[pass]_World[frame]",
-                rs.objects : "[name]_[pass][frame]",
-                rs.lights : "[name]_[pass][frame]",
-                rs.meshes : "[name]_[pass][frame]",
-                rs.particles : "[name]_[pass][frame]",
-                rs.materials : "[name]_[pass][frame]",
-                rs.object_blocks : "instances_[pass][frame]"}
+    types = {   rs.render_pass : ["[pass][frame]", "Passes"],
+                rs.settings : ["[pass]_Settings[frame]", "Settings"],
+                rs.world : ["[pass]_World[frame]", "Worlds"],
+                rs.objects : ["[name]_[pass][frame]", "Objects"],
+                rs.lights : ["[name]_[pass][frame]", "Lights"],
+                rs.meshes : ["[name][frame]", "Meshes"],
+                rs.particles : ["[name]_[pass][frame]", "Particles"],
+                rs.materials : ["[name]_[pass][frame]", "Materials"],
+                rs.object_blocks : ["instances_[pass][frame]", "Instances"]}
     
     for p in types:            
         if p.filename == "" or p.default_name:
-            p.filename = types[p]
+            p.filename = types[p][0]
+        if p.folder == "":
+            p.folder = types[p][1]
 
 def maintain_assigned_shaders(context):
     ap = getactivepass(context.scene)
@@ -944,7 +949,8 @@ def maintain(context):
     maintain_assigned_shaders(context)
     maintain_rib_structure(scene)    
 
-    for i, rpass in enumerate(scene.renderman_settings.passes):
+    passes = scene.renderman_settings.passes
+    for i, rpass in enumerate(passes):
         maintain_camera(rpass, scene)
         maintain_display_drivers(rpass, scene)
 #        maintain_options(rpass, scene)
@@ -954,17 +960,17 @@ def maintain(context):
         i = clear_envmap_passes(i, scene)  
     
     for obj in scene.objects:
-        atleast_one_pass(obj)    
+        atleast_one_pass(obj, passes)    
         if obj.type == 'LAMP':
-            atleast_one_pass(obj.data)
+            atleast_one_pass(obj.data, passes)
             maintain_shadowmap_passes(obj, scene)
             maintain_light(obj, scene)       
 
         else:
             for ps in obj.particle_systems:
-                atleast_one_pass(ps.settings)
+                atleast_one_pass(ps.settings, passes)
             for m in obj.material_slots:
-                atleast_one_pass(m.material)
+                atleast_one_pass(m.material, passes)
             update_illuminate_list(obj, scene)
             maintain_environment_map_passes(obj, scene)
             

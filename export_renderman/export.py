@@ -50,9 +50,9 @@ def get_write():
     global active_archive
     return active_archive.file.write
 
-def get_archive(path = None, type = "", parent_type = ""):
+def get_archive(path = None, type = "", parent_type = "", parent_path = None):
     global base_archive
-    return base_archive.get_child(path, type = type, parent_type = parent_type)
+    return base_archive.get_child(path, type = type, parent_type = parent_type, parent_path = parent_path)
         
 
 class Archive(): ## if specified open a new archive otherwise link to the parents file handle
@@ -65,7 +65,7 @@ class Archive(): ## if specified open a new archive otherwise link to the parent
     archives, e.g. writeparms() just need to call get_write() that will return the active archive.
     If one wants to export a single object call Archive(obj, scene = scene).
     '''
-    
+
     data_path = None ## path to datablock
     parent_archive = None ## store its parent
     filepath = ""
@@ -74,7 +74,6 @@ class Archive(): ## if specified open a new archive otherwise link to the parent
     current_pass = None
     type = "" ## identifier for the rs path
     rs = None ## path to rib_structure properties
-    closed = False
     
     def __init__(   self,
                     data_path = None,
@@ -133,6 +132,8 @@ class Archive(): ## if specified open a new archive otherwise link to the parent
         
         if self.type in ['Scene', 'Settings', 'World']:
             pname = current_pass.name
+        elif self.type == 'MESH':
+            pname = ''
         else:
             print("trying to get linked pass for this object")
             pname = linked_pass(prop_path, current_pass).name
@@ -147,7 +148,7 @@ class Archive(): ## if specified open a new archive otherwise link to the parent
         if rs.own_file:
             if not os.path.exists(path): os.mkdir(path)
             if parent_archive != None:
-                if type == "MESH" and prop_path.data.export_type == 'DelayedReadArchive':
+                if type == "MESH" and prop_path.export_type == 'DelayedReadArchive':
                     parent_archive.file.write('DelayedReadArchive "'+filepath.replace('\\', '\\\\')+'" [')
                     for bound in obj.bound_box:
                         parent_archive.file.write([" ".join(str(b)) for b in bound])
@@ -172,11 +173,11 @@ class Archive(): ## if specified open a new archive otherwise link to the parent
         elif not self.parent_archive:     
             self.file.close()
         
-    def get_child(self, path, type = "", parent_type = ""):
+    def get_child(self, path, parent_path = None, type = "", parent_type = ""):
         print("looking for:", type, "it's parent is", parent_type)
         def children(a):              ## recursivly checking the children and returning the one looking for
             print("checking:", a.type)
-            if not (a.type == parent_type):
+            if (parent_path == None and a.type != parent_type) or (parent_path != None and a.data_path != parent_path):
                 if a.child_archives != []:
                     for ch in a.child_archives:
                         test = children(ch)
@@ -1031,7 +1032,7 @@ def writeMesh(mesh):
     subsurf = ptype == 'subdivisionmesh'
     smoothshade = False
     
-    mesh_archive = get_archive(path = mesh, type = "MESH", parent_type = "Object")
+    mesh_archive = get_archive(path = mesh.data, type = "MESH", parent_type = "Object", parent_path = mesh)
     scene = mesh_archive.scene
     print("This Polygon Object is a", ptype)
     mwrite = mesh_archive.file.write
@@ -1189,14 +1190,7 @@ def export(rib, rpass, scene):
             process_envmap(current_pass, fov, scene)
             
     else:
-        if current_pass.shadow:
-            camera = scene.objects[current_pass.camera_object]
-        else:
-            camera = scene.camera
-            if camera == None:
-                print("No Camera Selected")
-                return
-            
+        camera = scene.objects[current_pass.camera_object]
         rot = camera.rotation_euler
                         
         camrot = [degrees(rot[0]), degrees(rot[1]), degrees(rot[2])]    
