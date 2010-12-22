@@ -1,7 +1,7 @@
 import bpy
 bpy.context.scene.renderman_settings.renderexec = 'aqsis'
 bpy.context.scene.renderman_settings.shaderexec = 'aqsl'
-bpy.context.scene.renderman_settings.textureexec = 'texmake'
+bpy.context.scene.renderman_settings.textureexec = 'teqser'
 bpy.context.scene.renderman_settings.shadersource = 'sl'
 bpy.context.scene.renderman_settings.shaderbinary = 'slx'
 bpy.context.scene.renderman_settings.shaderinfo = 'aqsltell'
