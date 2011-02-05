@@ -461,6 +461,7 @@ def dimensions_layout(layout, rc, scene, env=False):
     col = layout.column(align = True)
     row = col.row(align = True)
     row.prop(rc, "square")
+    row = col.row(align=True)
     row.prop(rc, "resx")
     row.prop(rc, "resy")
     row = col.row(align=True)
@@ -468,11 +469,24 @@ def dimensions_layout(layout, rc, scene, env=False):
     row = col.row(align=True)
     row.prop(rc, "aspectx")
     row.prop(rc, "aspecty")
+    row = col.row()
+    row.prop(rc, "depthoffield")
     row = col.row(align=True)
-    row.prop(rc, "shift_x")
-    row.prop(rc, "shift_y")
-    row = col.row(align = True)
+    row.enabled = rc.depthoffield
+    row.prop(rc, "dof_distance")
+    row.prop(rc, "fstop")
+    if scene.objects[getactivepass(scene).camera_object].type == "CAMERA":
+        row = col.row()
+        row.enabled = rc.depthoffield
+        row.prop(rc, "use_lens_length")
+        row = col.row()
+        row.enabled = rc.depthoffield and not rc.use_lens_length
+        row.prop(rc, "focal_length")
     if scene.objects[getactivepass(scene).camera_object].type != "CAMERA":
+        row = col.row(align=True)
+        row.prop(rc, "shift_x")
+        row.prop(rc, "shift_y")
+        row = col.row(align = True)
         row.prop(rc, "near_clipping", text="Near")
         row.prop(rc, "far_clipping", text="Far")
         row=col.row(align=True)
@@ -967,6 +981,8 @@ class Renderman_PT_Render(RenderButtonsPanel, bpy.types.Panel):
         row.operator("renderman.render", text="Image", icon="RENDER_STILL")
         row.operator("renderman.render", text="Animation", icon="RENDER_ANIMATION").anim = True
         row = layout.row()
+        row.prop(context.scene.renderman_settings, "exportallpasses")
+        row = layout.row()
         row.operator("renderman.maintain")
 
 class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
@@ -1289,11 +1305,6 @@ class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
             rows = 15
     
         col.template_list(renderman_settings, "passes", renderman_settings, "passes_index", rows=rows)
-        sub_row=col.row(align=True)    
-        sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
-        sub_row.prop(scene.renderman_settings, "exportallpasses", text="All Passes")
-
-     
 
         col = row.column(align=True)
 
@@ -1301,13 +1312,11 @@ class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
         col.operator("renderman.rempass", text="", icon="ZOOMOUT")
         col.operator("renderman.movepass", icon='TRIA_UP', text="").direction = "up"
         col.operator("renderman.movepass", icon='TRIA_DOWN', text="").direction = "down"
-
+        
+        row = layout.row(align=True) 
+        row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
         if renderman_settings.passes:
-            row = layout.row(align=True) 
             row.prop(active_pass, "name", text="")
-            row.prop(active_pass, "exportanimation", text="Animate Pass")       
-            row = layout.row()
-            row.prop(active_pass, "imagedir", text="Image Folder")
         
         
 class Renderman_PT_PassCamera(bpy.types.Panel, RenderButtonsPanel):
@@ -1468,6 +1477,7 @@ class Render_PT_RendermanDisplayPanel(RenderButtonsPanel, bpy.types.Panel):
         if renderman_settings.passes:
             active_pass = getactivepass(scene)
             if active_pass:
+                layout.prop(active_pass, "imagedir", text="Image Folder")
                 layout.operator("renderman.adddisplay", text="", icon="ZOOMIN")
                 for display_index, display in enumerate(active_pass.displaydrivers):
                     main_box = layout.box()

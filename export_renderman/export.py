@@ -44,6 +44,7 @@ from export_renderman.rm_maintain import *
 import bpy
 from math import *
 
+exported_instances = []
 current_pass = base_archive = active_archive = None
 direction = ""
 
@@ -149,7 +150,8 @@ class Archive():    # if specified open a new archive
                  'World': rs_base.world,
                  'Particle System': rs_base.particles,
                  'Particle Data': rs_base.particle_data,
-                 'Frame' : rs_base.frame}
+                 'Frame' : rs_base.frame,
+                 'Instances' : rs_base.object_blocks}
            
         base_path = getdefaultribpath(scene)
         if type == "":
@@ -165,7 +167,7 @@ class Archive():    # if specified open a new archive
         else:
             prop_path = data_path
         
-        if self.type in ['Pass', 'Settings', 'World']:
+        if self.type in ['Pass', 'Settings', 'World', 'Instances']:
             pname = current_pass.name
         elif self.type in ['MESH', 'Frame']:
             pname = ''
@@ -1339,7 +1341,8 @@ def export_object(obj, type = "ReadArchive"):
             
 
 def export(rpass, scene):
-    global current_pass, direction, base_archive
+    global current_pass, direction, base_archive, exported_instances
+    exported_instances = []
     current_pass = rpass
     degrees = math.degrees
     rs = scene.renderman_settings.rib_structure.render_pass
@@ -1389,11 +1392,12 @@ def writerib(camera, camrot, dir = ""):
     global base_archive
     scene = base_archive.scene
     rm = scene.renderman_settings
+    instarchive = create_child(scene, type="Instances")
     for obj in scene.objects:
         if obj.type in ['MESH']:
             if obj.data.export_type == 'ObjectInstance':
                 export_object(obj, type = obj.data.export_type)
-
+    set_parent_active()
     writeSettings(camrot)
     writeWorld()
 

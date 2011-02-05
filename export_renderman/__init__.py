@@ -116,8 +116,6 @@ del properties_data_mesh
 del properties_data_camera
 del properties_data_lamp
 
-exported_instances = []
-
 ##################################################################################################################################
 #checking folders and creating them if necessary
 
@@ -439,10 +437,7 @@ class RendermanRender(bpy.types.RenderEngine):
             if scene.renderman_settings.exportallpasses:
                 for item in scene.renderman_settings.passes:
                     imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
-                    checkForPath(imagefolder)                                       
-    
-                    exported_instances = []
-    
+                    checkForPath(imagefolder)
                     export(item, scene)
                 close_all()
                 if not scene.renderman_settings.exportonly:
@@ -450,9 +445,6 @@ class RendermanRender(bpy.types.RenderEngine):
                         self.rm_start_render(rndr, base_archive.filepath, item, scene)
                         check_disps_processing(item, scene)
             else:
-                exported_instances = []
-    
-    
                 export(active_pass, scene)
                 close_all()
                 imagefolder = os.path.join(path, active_pass.imagedir)
