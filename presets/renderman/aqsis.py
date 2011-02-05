@@ -1,32 +1,23 @@
 import bpy
 bpy.context.scene.renderman_settings.renderexec = 'aqsis'
 bpy.context.scene.renderman_settings.shaderexec = 'aqsl'
-bpy.context.scene.renderman_settings.textureexec = 'teqser'
+bpy.context.scene.renderman_settings.textureexec = 'texmake'
 bpy.context.scene.renderman_settings.shadersource = 'sl'
 bpy.context.scene.renderman_settings.shaderbinary = 'slx'
 bpy.context.scene.renderman_settings.shaderinfo = 'aqsltell'
 bpy.context.scene.renderman_settings.textureext = 'tx'
+bpy.context.scene.renderman_settings.disp_ext = 'dpy'
+bpy.context.scene.renderman_settings.disp_ext_os_default = False
 bpy.context.scene.renderman_settings.displaydrvpath = '//../../../../../usr/lib/aqsis'
 bpy.context.scene.renderman_settings.drv_identifier = '_dspy'
-bpy.context.scene.renderman_settings.deepdisplay = ''
-bpy.context.scene.renderman_settings.defaultshadow = 'shadow'
 bpy.context.scene.renderman_settings.default_hider = ''
-bpy.context.scene.renderman_settings.obj_attributes_export = False
-bpy.context.scene.renderman_settings.mappings.point_shadowpref = 'sf'
-bpy.context.scene.renderman_settings.mappings.shadowmap = 'shadowname'
-bpy.context.scene.renderman_settings.mappings.pointshader = 'pointlight'
-bpy.context.scene.renderman_settings.mappings.shadowpointshader = 'shadowpoint'
-bpy.context.scene.renderman_settings.mappings.spotshader = 'spotlight'
-bpy.context.scene.renderman_settings.mappings.shadowspotshader = 'shadowspot'
-bpy.context.scene.renderman_settings.mappings.distantshader = 'distantlight'
-bpy.context.scene.renderman_settings.mappings.shadowdistantshader = 'shadowdistant'
 if not "limits" in bpy.context.scene.renderman_settings.option_groups:
 	bpy.context.scene.renderman_settings.option_groups.add().name = "limits"
 if not "bucketmodulo" in bpy.context.scene.renderman_settings.option_groups["limits"].options:
 	bpy.context.scene.renderman_settings.option_groups["limits"].options.add().name = "bucketmodulo"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketmodulo"].parametertype = "int"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketmodulo"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketmodulo"].texture = False
+bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketmodulo"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketmodulo"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketmodulo"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketmodulo"].colorparameter[1] = 0.0
@@ -47,7 +38,7 @@ if not "bucketsize" in bpy.context.scene.renderman_settings.option_groups["limit
 	bpy.context.scene.renderman_settings.option_groups["limits"].options.add().name = "bucketsize"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketsize"].parametertype = "int"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketsize"].vector_size = 2
-bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketsize"].texture = False
+bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketsize"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketsize"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketsize"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["limits"].options["bucketsize"].colorparameter[1] = 0.0
@@ -68,7 +59,7 @@ if not "eyesplits" in bpy.context.scene.renderman_settings.option_groups["limits
 	bpy.context.scene.renderman_settings.option_groups["limits"].options.add().name = "eyesplits"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["eyesplits"].parametertype = "int"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["eyesplits"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["limits"].options["eyesplits"].texture = False
+bpy.context.scene.renderman_settings.option_groups["limits"].options["eyesplits"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["eyesplits"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["limits"].options["eyesplits"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["limits"].options["eyesplits"].colorparameter[1] = 0.0
@@ -89,7 +80,7 @@ if not "gridsize" in bpy.context.scene.renderman_settings.option_groups["limits"
 	bpy.context.scene.renderman_settings.option_groups["limits"].options.add().name = "gridsize"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["gridsize"].parametertype = "int"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["gridsize"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["limits"].options["gridsize"].texture = False
+bpy.context.scene.renderman_settings.option_groups["limits"].options["gridsize"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["gridsize"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["limits"].options["gridsize"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["limits"].options["gridsize"].colorparameter[1] = 0.0
@@ -110,7 +101,7 @@ if not "texturememory" in bpy.context.scene.renderman_settings.option_groups["li
 	bpy.context.scene.renderman_settings.option_groups["limits"].options.add().name = "texturememory"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["texturememory"].parametertype = "int"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["texturememory"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["limits"].options["texturememory"].texture = False
+bpy.context.scene.renderman_settings.option_groups["limits"].options["texturememory"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["texturememory"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["limits"].options["texturememory"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["limits"].options["texturememory"].colorparameter[1] = 0.0
@@ -131,7 +122,7 @@ if not "zthreshold" in bpy.context.scene.renderman_settings.option_groups["limit
 	bpy.context.scene.renderman_settings.option_groups["limits"].options.add().name = "zthreshold"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["zthreshold"].parametertype = "color"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["zthreshold"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["limits"].options["zthreshold"].texture = False
+bpy.context.scene.renderman_settings.option_groups["limits"].options["zthreshold"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["limits"].options["zthreshold"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["limits"].options["zthreshold"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["limits"].options["zthreshold"].colorparameter[1] = 0.0
@@ -154,7 +145,7 @@ if not "bucketorder" in bpy.context.scene.renderman_settings.option_groups["rend
 	bpy.context.scene.renderman_settings.option_groups["render"].options.add().name = "bucketorder"
 bpy.context.scene.renderman_settings.option_groups["render"].options["bucketorder"].parametertype = "string"
 bpy.context.scene.renderman_settings.option_groups["render"].options["bucketorder"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["render"].options["bucketorder"].texture = False
+bpy.context.scene.renderman_settings.option_groups["render"].options["bucketorder"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["render"].options["bucketorder"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["render"].options["bucketorder"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["render"].options["bucketorder"].colorparameter[1] = 0.0
@@ -175,7 +166,7 @@ if not "multipass" in bpy.context.scene.renderman_settings.option_groups["render
 	bpy.context.scene.renderman_settings.option_groups["render"].options.add().name = "multipass"
 bpy.context.scene.renderman_settings.option_groups["render"].options["multipass"].parametertype = "int"
 bpy.context.scene.renderman_settings.option_groups["render"].options["multipass"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["render"].options["multipass"].texture = False
+bpy.context.scene.renderman_settings.option_groups["render"].options["multipass"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["render"].options["multipass"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["render"].options["multipass"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["render"].options["multipass"].colorparameter[1] = 0.0
@@ -198,8 +189,8 @@ if not "shader" in bpy.context.scene.renderman_settings.option_groups["searchpat
 	bpy.context.scene.renderman_settings.option_groups["searchpath"].options.add().name = "shader"
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].parametertype = "string"
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].texture = False
-bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].textparameter = "/usr/share/aqsis/shaders:"
+bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].input_type = "string"
+bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].textparameter = "/usr/share/aqsis/shaders/displacement:/usr/share/aqsis/shaders/volume:/usr/share/aqsis/shaders/surface:/usr/share/aqsis/shaders/light:/usr/share/aqsis/shaders/imager:@:&"
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].colorparameter[1] = 0.0
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["shader"].colorparameter[2] = 0.0
@@ -219,8 +210,8 @@ if not "texture" in bpy.context.scene.renderman_settings.option_groups["searchpa
 	bpy.context.scene.renderman_settings.option_groups["searchpath"].options.add().name = "texture"
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].parametertype = "string"
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].texture = False
-bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].textparameter = "/tmp/Scene/textures:/tmp/Scene/shadowmaps:/tmp/Scene/envmaps"
+bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].input_type = "string"
+bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].textparameter = "/tmp/Scene/textures"
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].colorparameter[1] = 0.0
 bpy.context.scene.renderman_settings.option_groups["searchpath"].options["texture"].colorparameter[2] = 0.0
@@ -242,7 +233,7 @@ if not "bias" in bpy.context.scene.renderman_settings.option_groups["shadow"].op
 	bpy.context.scene.renderman_settings.option_groups["shadow"].options.add().name = "bias"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias"].parametertype = "float"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias"].texture = False
+bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias"].colorparameter[1] = 0.0
@@ -263,7 +254,7 @@ if not "bias0" in bpy.context.scene.renderman_settings.option_groups["shadow"].o
 	bpy.context.scene.renderman_settings.option_groups["shadow"].options.add().name = "bias0"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias0"].parametertype = "float"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias0"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias0"].texture = False
+bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias0"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias0"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias0"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias0"].colorparameter[1] = 0.0
@@ -284,7 +275,7 @@ if not "bias1" in bpy.context.scene.renderman_settings.option_groups["shadow"].o
 	bpy.context.scene.renderman_settings.option_groups["shadow"].options.add().name = "bias1"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias1"].parametertype = "float"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias1"].vector_size = 1
-bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias1"].texture = False
+bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias1"].input_type = "string"
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias1"].textparameter = ""
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias1"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.option_groups["shadow"].options["bias1"].colorparameter[1] = 0.0
@@ -307,7 +298,7 @@ if not "expandgrids" in bpy.context.scene.renderman_settings.attribute_groups["a
 	bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes.add().name = "expandgrids"
 bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes["expandgrids"].parametertype = "float"
 bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes["expandgrids"].vector_size = 1
-bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes["expandgrids"].texture = False
+bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes["expandgrids"].input_type = "string"
 bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes["expandgrids"].textparameter = ""
 bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes["expandgrids"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.attribute_groups["aqsis"].attributes["expandgrids"].colorparameter[1] = 0.0
@@ -330,7 +321,7 @@ if not "res" in bpy.context.scene.renderman_settings.attribute_groups["autoshado
 	bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes.add().name = "res"
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["res"].parametertype = "int"
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["res"].vector_size = 1
-bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["res"].texture = False
+bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["res"].input_type = "string"
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["res"].textparameter = ""
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["res"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["res"].colorparameter[1] = 0.0
@@ -351,7 +342,7 @@ if not "shadowmapname" in bpy.context.scene.renderman_settings.attribute_groups[
 	bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes.add().name = "shadowmapname"
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["shadowmapname"].parametertype = "string"
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["shadowmapname"].vector_size = 1
-bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["shadowmapname"].texture = False
+bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["shadowmapname"].input_type = "string"
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["shadowmapname"].textparameter = ""
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["shadowmapname"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.attribute_groups["autoshadow"].attributes["shadowmapname"].colorparameter[1] = 0.0
@@ -374,7 +365,7 @@ if not "binary" in bpy.context.scene.renderman_settings.attribute_groups["dice"]
 	bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes.add().name = "binary"
 bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes["binary"].parametertype = "int"
 bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes["binary"].vector_size = 1
-bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes["binary"].texture = False
+bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes["binary"].input_type = "string"
 bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes["binary"].textparameter = ""
 bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes["binary"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.attribute_groups["dice"].attributes["binary"].colorparameter[1] = 0.0
@@ -397,7 +388,7 @@ if not "sense" in bpy.context.scene.renderman_settings.attribute_groups["trimcur
 	bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes.add().name = "sense"
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].parametertype = "string"
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].vector_size = 1
-bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].texture = False
+bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].input_type = "string"
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].textparameter = ""
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].colorparameter[1] = 0.0
@@ -414,15 +405,23 @@ bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["s
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].int_three[0] = 0
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].int_three[1] = 0
 bpy.context.scene.renderman_settings.attribute_groups["trimcurve"].attributes["sense"].int_three[2] = 0
-if not "/usr/share/aqsis/shaders" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
-	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "/usr/share/aqsis/shaders"
+if not "/usr/share/aqsis/shaders/displacement" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
+	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "/usr/share/aqsis/shaders/displacement"
+if not "/usr/share/aqsis/shaders/volume" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
+	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "/usr/share/aqsis/shaders/volume"
+if not "/usr/share/aqsis/shaders/surface" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
+	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "/usr/share/aqsis/shaders/surface"
+if not "/usr/share/aqsis/shaders/light" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
+	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "/usr/share/aqsis/shaders/light"
+if not "/usr/share/aqsis/shaders/imager" in bpy.context.scene.renderman_settings.shaders.shaderpaths:
+	bpy.context.scene.renderman_settings.shaders.shaderpaths.add().name = "/usr/share/aqsis/shaders/imager"
 if not "hidden" in bpy.context.scene.renderman_settings.hider_list:
 	bpy.context.scene.renderman_settings.hider_list.add().name = "hidden"
 if not "depthfilter" in bpy.context.scene.renderman_settings.hider_list["hidden"].options:
 	bpy.context.scene.renderman_settings.hider_list["hidden"].options.add().name = "depthfilter"
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["depthfilter"].parametertype = "string"
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["depthfilter"].vector_size = 1
-bpy.context.scene.renderman_settings.hider_list["hidden"].options["depthfilter"].texture = False
+bpy.context.scene.renderman_settings.hider_list["hidden"].options["depthfilter"].input_type = "string"
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["depthfilter"].textparameter = ""
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["depthfilter"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["depthfilter"].colorparameter[1] = 0.0
@@ -443,7 +442,7 @@ if not "jitter" in bpy.context.scene.renderman_settings.hider_list["hidden"].opt
 	bpy.context.scene.renderman_settings.hider_list["hidden"].options.add().name = "jitter"
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["jitter"].parametertype = "int"
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["jitter"].vector_size = 1
-bpy.context.scene.renderman_settings.hider_list["hidden"].options["jitter"].texture = False
+bpy.context.scene.renderman_settings.hider_list["hidden"].options["jitter"].input_type = "string"
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["jitter"].textparameter = ""
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["jitter"].colorparameter[0] = 0.0
 bpy.context.scene.renderman_settings.hider_list["hidden"].options["jitter"].colorparameter[1] = 0.0

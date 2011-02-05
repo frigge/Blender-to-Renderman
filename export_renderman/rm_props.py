@@ -31,6 +31,17 @@
 #Thanks to: Campbell Barton, Eric Back, Nathan Vegdahl
 
 import bpy
+from math import *
+
+RM_FILTER =(("box", "Box", "Box Filter"),
+            ("gaussian", "Gaussian", "Gaussian Filter"),
+            ("sinc", "Sinc", "Cube Filter"),
+            ("triangle", "Triangle", "Triangle Filter"),
+            ("catmull-rom", "Catmull-Rom", ""),
+            ("blackman-harris", "Blackman-Harris", ""),
+            ("mitchell", "Mitchell", ""),
+            ("bessel", "Bessel", ""),
+            ("other", "Other", "Custom Filter"))
 
 ##################################################################################################################################
 #Define classes for Collection and Pointer properties
@@ -41,10 +52,10 @@ class passes(bpy.types.IDPropertyGroup):            #passes
 class DisplayCollection(bpy.types.IDPropertyGroup):         #Display Drivers
     pass
 
-class Collection(bpy.types.IDPropertyGroup):            #All Variable Properties: Shader Settings, Options, Attributes
+class Collection(bpy.types.IDPropertyGroup):            #All Variable Properties: Shader Parameters, Options, Attributes
     pass
 
-class Shader(bpy.types.IDPropertyGroup):            #
+class Shader(bpy.types.IDPropertyGroup):            #Shader Settings Passes
     pass
 
 class ObjectParameters(bpy.types.IDPropertyGroup):            #Object Attributes
@@ -53,7 +64,7 @@ class ObjectParameters(bpy.types.IDPropertyGroup):            #Object Attributes
 class RendermanSceneSettings(bpy.types.IDPropertyGroup):            #Renderman Scene Settings
     pass
 
-class Paths(bpy.types.IDPropertyGroup):             #
+class Paths(bpy.types.IDPropertyGroup):             #Shader Paths
     pass
 
 class PathProperties(bpy.types.IDPropertyGroup):            #
@@ -83,9 +94,6 @@ class RendermanTexture(bpy.types.IDPropertyGroup):
 class EmptyCollections(bpy.types.IDPropertyGroup):
     pass
 
-class Mappings(bpy.types.IDPropertyGroup):
-    pass
-
 class ParticlePasses(bpy.types.IDPropertyGroup):
     pass
 
@@ -107,12 +115,152 @@ class RendermanCamera(bpy.types.IDPropertyGroup):
 class OutputImages(bpy.types.IDPropertyGroup):
     pass
 
+class ClientParameters(bpy.types.IDPropertyGroup):
+    pass
+
+class VarCollections(bpy.types.IDPropertyGroup):
+    type_ = bpy.props.StringProperty()
+
+class ImageProcessing(bpy.types.IDPropertyGroup):
+    
+    process = bpy.props.BoolProperty(    name="Process",
+                                        default=False,
+                                        description="run Texture processing tool to convert into rendermans intern texture format")
+    
+    output = bpy.props.StringProperty(name="Output",
+                                  description="name of Image Output")
+    
+    default_output = bpy.props.BoolProperty(name="Default",
+                                            description="Use Default Output",
+                                            default=True)
+    
+    filter = bpy.props.EnumProperty(   name="Filter",
+                                        default="box",
+                                        items=RM_FILTER,
+                                        description="Filter to use when converting the image")
+    
+    custom_filter = bpy.props.StringProperty(name = "Custom Filter")
+    
+    width = bpy.props.FloatProperty(     name ="Width",
+                                        min = 0,
+                                        max = 100,
+                                        default = 1,
+                                        description = "Filter Width")
+    
+    swidth = bpy.props.FloatProperty(    name = "s Width",
+                                        min = 0,
+                                        max = 100,
+                                        default = 1,
+                                        description = "Filter Width in s direction")
+    
+    twidth = bpy.props.FloatProperty(    name = "t Width",
+                                        min = 0,
+                                        max = 100,
+                                        default = 1,
+                                        description = "Filter Width in t direction")
+    
+    stwidth = bpy.props.BoolProperty(    name = "st Width",
+                                        default = False,
+                                        description = "Specify Filter Width in s and t direction separately")
+            
+    envcube = bpy.props.BoolProperty(name="EnvCube", description="make cubeface environment", default=False)
+    
+    fov = bpy.props.FloatProperty(name="FOV", description="Field of View for Cube Face Environment", min=0.01, max=360, default=radians(90), subtype="ANGLE")
+    
+    shadow = bpy.props.BoolProperty(name="Shadow", description="Make Shadwo", default=False)
+    
+    custom_parameter = bpy.props.StringProperty(name="Custom Parameter")
+
+class CustomCodeCollection(bpy.types.IDPropertyGroup):
+    foreach = bpy.props.BoolProperty(name="For Each Environment Direction",
+                                     description="Export Code for each environment direction or only for the last",
+                                     default=False)
+    
+    position = bpy.props.EnumProperty(name="Position", items=(("begin", "Begin", ""),
+                                                              ("end", "End", "")))
+    
+    world_position = bpy.props.EnumProperty(name="Position", items=(("begin", "Begin", ""),
+                                                                    ("end_inside", "End (Inside World Block)", ""),
+                                                                    ("end_outside", "End (Outside World Block)", "")))
+    
+    parameter = bpy.props.PointerProperty(type=Collection)
+        
+    image_prcessing = bpy.props.PointerProperty(type=ImageProcessing)
+    
+    all_dirs = bpy.props.BoolProperty(name="All Directions",
+                                      description="Convert file name input into 6 files"
+                                                   + "replacing [dir] with the direction",
+                                      default=True)
+    
+    makeshadow = bpy.props.BoolProperty(name="MakeShadow (RIB)",
+                                        default=False,
+                                        description="Convert Image into Shadowmap")
+    
+    makecubefaceenv = bpy.props.BoolProperty(name="MakeCubeFaceEnvironment (RIB)",
+                                    default=False,
+                                    description="Convert Images into Cubic Environment")
+    
+    output = bpy.props.StringProperty(name="Output",
+                                  description="name of Image Output")
+    
+    default_output = bpy.props.BoolProperty(name="Default",
+                                            description="Use Default Output",
+                                            default=True)
+    
+    filter = bpy.props.EnumProperty(   name="Filter",
+                                        default="box",
+                                        items=RM_FILTER,
+                                        description="Filter to use when converting the image")
+    
+    custom_filter = bpy.props.StringProperty(name = "Custom Filter")
+    
+    width = bpy.props.FloatProperty(     name ="Width",
+                                        min = 0,
+                                        max = 100,
+                                        default = 1,
+                                        description = "Filter Width")
+    
+    swidth = bpy.props.FloatProperty(    name = "s Width",
+                                        min = 0,
+                                        max = 100,
+                                        default = 1,
+                                        description = "Filter Width in s direction")
+    
+    twidth = bpy.props.FloatProperty(    name = "t Width",
+                                        min = 0,
+                                        max = 100,
+                                        default = 1,
+                                        description = "Filter Width in t direction")
+    
+    stwidth = bpy.props.BoolProperty(    name = "st Width",
+                                        default = False,
+                                        description = "Specify Filter Width in s and t direction separately")
+    
+    blur = bpy.props.FloatProperty(name="Blur", min=0, max=1000, default=1.0)
+        
+    fov = bpy.props.FloatProperty(name="FOV", description="Field of View for Cube Face Environment", min=0.01, max=360, default=radians(90), subtype="ANGLE")
+
 #########################################################################################################
 #                                                                                                       #
 #       Create Properties                                                                               #
 #                                                                                                       #
 #########################################################################################################
 
+ClientParameters.client = bpy.props.StringProperty()
+
+ClientParameters.output = bpy.props.StringProperty()
+
+ClientParameters.preset = bpy.props.StringProperty()
+
+ClientParameters.render_pass = bpy.props.StringProperty()
+
+ClientParameters.pass_name = bpy.props.StringProperty()
+
+ClientParameters.request_pass = bpy.props.StringProperty()
+
+ClientParameters.index = bpy.props.IntProperty(min = 0, max = 100, default = 0)
+
+RendermanCamera.respercentage = bpy.props.IntProperty(min=1, max=100, default=100, subtype='PERCENTAGE', name="Resolution Percentage")
 
 RendermanCamera.resx = bpy.props.IntProperty(min = 1, max = 100000, default = 1920, name = "X Resolution")
 
@@ -127,6 +275,8 @@ RendermanCamera.square = bpy.props.BoolProperty(name = "Square", default = False
 RendermanCamera.shift_x = bpy.props.FloatProperty(default = 0, name="Shift X")
 
 RendermanCamera.shift_y = bpy.props.FloatProperty(default = 0, name="Shift Y")
+
+RendermanCamera.fov = bpy.props.FloatProperty(default = 90, min=0.001, max= 360, name="FOV")
 
 RendermanCamera.depthoffield = bpy.props.BoolProperty(default = False,
                         name = "DOF")
@@ -187,22 +337,18 @@ Collection.parametertype = bpy.props.EnumProperty(items=(
 
 Collection.textparameter = bpy.props.StringProperty()
 
-Collection.texture = bpy.props.BoolProperty(  description = "Choose from materials texture stack",
-                            default=False,
-                            options={'ANIMATABLE'})
+Collection.input_type = bpy.props.EnumProperty(name = "Input Type",
+                                               description = "Where to look for input",
+                                               items = (("display", "Display", ""),
+                                                        ("texture", "Texture", ""),
+                                                        ("string", "String", "")),
+                                               default = "string")
                             
-Collection.output_image = bpy.props.BoolProperty( name = "Output Image",
-                                description = "Is output image",
-                                default = False)
-                            
-Collection.export = bpy.props.BoolProperty(default=False, description="export object attribute", options={'ANIMATABLE'})
+Collection.export = bpy.props.BoolProperty(default=True, description="export object attribute", options={'ANIMATABLE'})
 
 Collection.preset_include = bpy.props.BoolProperty(default = True, description = "include Attribute in preset", options={'ANIMATABLE'})
 
 Collection.rib_name = bpy.props.StringProperty()                          
-
-Collection.texture_raw = bpy.props.StringProperty()
-
 
 Collection.float_one = bpy.props.FloatVectorProperty( precision = 4,
                                     size = 1,
@@ -262,7 +408,9 @@ Collection.type = bpy.props.StringProperty()
 #                                           #
 #############################################
 
-passes.ordered = bpy.props.BoolProperty(name="Ordered", default = False)
+passes.client = bpy.props.StringProperty()
+
+passes.requested = bpy.props.BoolProperty(default = False)
 
 passes.displaydrivers = bpy.props.CollectionProperty(type=DisplayCollection)
 
@@ -270,9 +418,17 @@ passes.displayindex = bpy.props.IntProperty(  default = -1,
                             min=-1,
                             max=1000)
 
+RendermanSceneSettings.requests = bpy.props.CollectionProperty(type = ClientParameters)
+
 RendermanSceneSettings.displays = bpy.props.CollectionProperty(type=DisplayDrivers)
 
+RendermanSceneSettings.display_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
+
 RendermanSceneSettings.output_images = bpy.props.CollectionProperty(type = OutputImages)
+
+passes.output_images = bpy.props.CollectionProperty(type = OutputImages)
+
+OutputImages.render_pass = bpy.props.StringProperty()
                                             
 RendermanSceneSettings.hider_list = bpy.props.CollectionProperty(type=Hider)
 
@@ -290,6 +446,8 @@ passes.hider = bpy.props.StringProperty()
 
 RendermanSceneSettings.rib_structure = bpy.props.PointerProperty(type=RibStructureBase)
 
+RibStructureBase.frame = bpy.props.PointerProperty(type=RibStructure)
+
 RibStructureBase.render_pass = bpy.props.PointerProperty(type = RibStructure)
 
 RibStructureBase.settings = bpy.props.PointerProperty(type = RibStructure)
@@ -304,6 +462,8 @@ RibStructureBase.lights = bpy.props.PointerProperty(type = RibStructure)
 
 RibStructureBase.particles = bpy.props.PointerProperty(type = RibStructure)
 
+RibStructureBase.particle_data = bpy.props.PointerProperty(type = RibStructure)
+
 RibStructureBase.meshes = bpy.props.PointerProperty(type = RibStructure)
 
 RibStructureBase.materials = bpy.props.PointerProperty(type = RibStructure)
@@ -314,16 +474,22 @@ RibStructureBase.materials = bpy.props.PointerProperty(type = RibStructure)
 #                                           #
 #############################################
 
+Collection.expand = bpy.props.BoolProperty(default = False, name = "Expand")
+
+DisplayDrivers.custom_parameter = bpy.props.CollectionProperty(type = Collection)
+
 DisplayCollection.send = bpy.props.BoolProperty(default = False)
+
+DisplayCollection.export = bpy.props.BoolProperty(default=True, name="Export", description="Export this display")
 
 DisplayCollection.custom_options = bpy.props.CollectionProperty(type = Collection)
 
-Collection.custom_var = bpy.props.BoolProperty(default=True, description="use name of output variable as value")
+Collection.use_var = bpy.props.BoolProperty(default=False, name = "Use Var", description="use name of output variable as value")
 
 DisplayCollection.default_name = bpy.props.BoolProperty(default = True, name = "Default", description="Default Filename")                                          
 
 RendermanSceneSettings.var_collection = bpy.props.CollectionProperty( name="Output Value",
-                                                    type=DisplayDrivers
+                                                    type=VarCollections
                                                     )
                                
 DisplayCollection.var = bpy.props.StringProperty(default="rgba")                               
@@ -353,11 +519,15 @@ DisplayCollection.quantize_presets = bpy.props.EnumProperty(items=    (
                                                                     default = "16bit",
                                                                     name = "Quantization")
 
+DisplayCollection.processing = bpy.props.PointerProperty(type=ImageProcessing)
+
 DisplayCollection.expand = bpy.props.BoolProperty(default=False)
 
 DisplayCollection.quantize_expand = bpy.props.BoolProperty(default=False)
 
 DisplayCollection.exposure_expand = bpy.props.BoolProperty(default=False)
+
+DisplayCollection.processing_expand = bpy.props.BoolProperty(default=False)
 
 DisplayCollection.custom_expand = bpy.props.BoolProperty(default=False)
 
@@ -383,16 +553,8 @@ DisplayCollection.gamma = bpy.props.FloatProperty(min=0,
 
 passes.pixelfilter = bpy.props.PointerProperty(type=RendermanPixelFilter)
 
-RendermanPixelFilter.filterlist = bpy.props.EnumProperty(items=(
-                                            ("box", "Box", "Box Filter"),
-                                            ("gaussian", "Gaussian", "Gaussian Filter"),
-                                            ("sinc", "Sinc", "Cube Filter"),
-                                            ("triangle", "Triangle", "Triangle Filter"),
-                                            ("catmull-rom", "Catmull-Rom", ""),
-                                            ("blackman-harris", "Blackman-Harris", ""),
-                                            ("mitchell", "Mitchell", ""),
-                                            ("other", "Other", "Custom Filter")
-                                        ),
+
+RendermanPixelFilter.filterlist = bpy.props.EnumProperty(items=RM_FILTER,
                                     default="box",
                                     name = "PixelFilter")
 
@@ -417,9 +579,15 @@ Paths.shaderpaths = bpy.props.CollectionProperty(type = PathProperties)
 
 Paths.shadercollection = bpy.props.CollectionProperty(type = PathProperties)
 
-Paths.shadersrccollection = bpy.props.CollectionProperty(type = PathProperties)
+Paths.surface_collection = bpy.props.CollectionProperty(type = PathProperties)
 
-Paths.shaderbincollection = bpy.props.CollectionProperty(type = PathProperties)
+Paths.displacement_collection = bpy.props.CollectionProperty(type = PathProperties)
+
+Paths.volume_collection = bpy.props.CollectionProperty(type = PathProperties)
+
+Paths.light_collection = bpy.props.CollectionProperty(type = PathProperties)
+
+Paths.imager_collection = bpy.props.CollectionProperty(type = PathProperties)
 
 Paths.shaderpathsindex = bpy.props.IntProperty(min = -1,
                     max = 1000,
@@ -428,6 +596,8 @@ Paths.shaderpathsindex = bpy.props.IntProperty(min = -1,
 RendermanSceneSettings.shaders = bpy.props.PointerProperty(type = Paths)
 
 RendermanSceneSettings.shaderpath = bpy.props.StringProperty(subtype='DIR_PATH')
+
+RendermanSceneSettings.shaderpath_recursive = bpy.props.BoolProperty(name ="Recursive", description="add sub folders")
 
 RendermanSceneSettings.framepadding = bpy.props.IntProperty(default=4,
                     min=1,
@@ -452,6 +622,7 @@ RendermanSceneSettings.exportallpasses = bpy.props.BoolProperty(name="Export All
 ##########################################################
 #Settings
 RendermanSceneSettings.presetname = bpy.props.StringProperty()
+RendermanSceneSettings.preset_subfolder = bpy.props.StringProperty()
 RendermanSceneSettings.active_engine = bpy.props.StringProperty()
 RendermanSceneSettings.basic_expand = bpy.props.BoolProperty(default=False)
 RendermanSceneSettings.hider_expand = bpy.props.BoolProperty(default=False)
@@ -459,7 +630,7 @@ RendermanSceneSettings.options_expand = bpy.props.BoolProperty(default=False)
 RendermanSceneSettings.attributes_expand = bpy.props.BoolProperty(default=False)
 RendermanSceneSettings.shader_expand = bpy.props.BoolProperty(default=False)
 RendermanSceneSettings.dir_expand = bpy.props.BoolProperty(default=False)
-RendermanSceneSettings.mappings_expand = bpy.props.BoolProperty(default=False)
+RendermanSceneSettings.drivers_expand = bpy.props.BoolProperty(default=False)
 
 RendermanSceneSettings.renderexec = bpy.props.StringProperty(name="Render Executable",
                         description="Render Executable",
@@ -502,18 +673,6 @@ RendermanSceneSettings.textureext = bpy.props.StringProperty(name="Texture Exten
                         default="",
                         options={'HIDDEN'},
                         subtype='NONE')
-                        
-RendermanSceneSettings.deepdisplay = bpy.props.StringProperty(name="Texture Extension",
-                        description="Texture Extension",
-                        default="",
-                        options={'HIDDEN'},
-                        subtype='NONE')
-
-RendermanSceneSettings.defaultshadow = bpy.props.StringProperty(name="Texture Extension",
-                        description="Texture Extension",
-                        default="",
-                        options={'HIDDEN'},
-                        subtype='NONE')
 
 RendermanSceneSettings.displaydrvpath = bpy.props.StringProperty(name="Display Path",
                         description="Path to Display Driver folder",
@@ -529,23 +688,6 @@ RendermanSceneSettings.drv_identifier = bpy.props.StringProperty(description = "
 
 RendermanSceneSettings.default_driver = bpy.props.StringProperty(description = "Default Display Driver")
 
-RendermanSceneSettings.mappings = bpy.props.PointerProperty(type = Mappings)
-
-Mappings.point_shadowpref = bpy.props.StringProperty(name="Point Shadow Prefix", description="Pointlight Shadowmap Parameter Name Prefix in Light Shader")
-
-Mappings.shadowmap = bpy.props.StringProperty(name="Shadowmap", description="Shadowmap Parameter Name in Light Shader")
-
-Mappings.pointshader = bpy.props.StringProperty(name="PointShader", description="Default Pointlight Shader")
-
-Mappings.shadowpointshader = bpy.props.StringProperty(name ="ShadowPointShader", description="Default Shadowpoint Shader")
-
-Mappings.spotshader = bpy.props.StringProperty(name="SpotShader", description="Default Spotlight Shader")
-
-Mappings.shadowspotshader = bpy.props.StringProperty(name ="ShadowSpotShader", description="Default Shadowspot Shader")
-
-Mappings.distantshader = bpy.props.StringProperty(name="DistantShader", description="Default Distantlight Shader")
-
-Mappings.shadowdistantshader = bpy.props.StringProperty(name ="ShadowDistantShader", description="Default Shadowdistant Shader")
 
 #########################################################
 
@@ -607,19 +749,32 @@ passes.filename = bpy.props.StringProperty(default = "")
 
 passes.environment = bpy.props.BoolProperty(default = False)
 
-passes.envname = bpy.props.StringProperty()
-
 passes.camera_object = bpy.props.StringProperty()
 
 passes.motionblur = bpy.props.BoolProperty(default=False,
                             name="Motion Blur",
                             description = "render motion blur for this pass")
+
+passes.shutter_type = bpy.props.EnumProperty(name = "Shutter Type",
+                                             items = (  ("angle", "Angle", ""),
+                                                        ("seconds", "Seconds", "")),
+                                             default = "seconds")
                         
-passes.shutterspeed = bpy.props.IntProperty(name="Shutter Speed",
-                            min=2,
+passes.shutterspeed_sec = bpy.props.FloatProperty(name="Shutter Speed",
+                            min=0.0001,
                             max=1000,
-                            default=2,
-                            description="Amount of time the shutter is open(in frames)")                        
+                            precision = 4,
+                            default=0.01,
+                            unit = 'TIME',
+                            description="Amount of time the shutter is open(in seconds)")
+
+passes.shutterspeed_ang = bpy.props.FloatProperty(name="Shutter Speed",
+                            min=0.0001,
+                            max=1000,
+                            precision = 4,
+                            default=180,
+                            unit = 'ROTATION',
+                            description="Amount of time the shutter is open(in degrees)")   
 
 passes.option_groups = bpy.props.CollectionProperty(type=AttributeOptionGroup,
                             name="Option Groups",
@@ -630,7 +785,7 @@ passes.renderresult = bpy.props.StringProperty()
                             
 AttributeOptionGroup.expand = bpy.props.BoolProperty(default =False)
 
-AttributeOptionGroup.export = bpy.props.BoolProperty(default =False)
+AttributeOptionGroup.export = bpy.props.BoolProperty(default =True)
 
 AttributeOptionGroup.preset_include = bpy.props.BoolProperty(default = True, description="include Attribute Group in preset")
 
@@ -645,19 +800,18 @@ RendermanSceneSettings.option_groups = bpy.props.CollectionProperty(type=Attribu
                             
 RendermanSceneSettings.option_groups_index = bpy.props.IntProperty(min=-1, max=1000, default=-1)
 
-Collection.envmap = bpy.props.BoolProperty(name="Environmentmap",
-                        description="",
-                        default=False)
-
 Collection.rman_type = bpy.props.StringProperty()
 
-passes.scene_code = bpy.props.CollectionProperty(type = EmptyCollections)
+passes.scene_code = bpy.props.CollectionProperty(type = CustomCodeCollection)
 
 passes.scene_code_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
 
-passes.world_code = bpy.props.CollectionProperty(type = EmptyCollections)
+passes.world_code = bpy.props.CollectionProperty(type = CustomCodeCollection)
 
 passes.world_code_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
+
+passes.renderman_camera = bpy.props.PointerProperty(type = RendermanCamera)
+
 #############################################
 #                                           #
 #   World Properties                        #
@@ -673,6 +827,10 @@ RendermanSceneSettings.attribute_groups = bpy.props.CollectionProperty(type=Attr
 RendermanSceneSettings.attribute_groups_index = bpy.props.IntProperty(min=-1, max=1000, default=-1)                            
 
 passes.global_shader = bpy.props.PointerProperty(type = Shader)
+
+passes.override_shadingrate = bpy.props.BoolProperty(name="Override ShadingRate", description="Override ShadingRate of Objects", default=False)
+
+passes.shadingrate = bpy.props.FloatProperty(name="ShadingRate", description="", min=0, max=100, default=1)
 
 #############################################
 #                                           #
@@ -715,12 +873,6 @@ Shader.links = bpy.props.CollectionProperty(type = EmptyCollections)
 
 Shader.attribute_groups = bpy.props.CollectionProperty(type = AttributeOptionGroup)
 
-Shader.customshader = bpy.props.BoolProperty(name="Custom Shader",
-                            description="Assign custom shader",
-                            default=False,
-                            options={'HIDDEN'},
-                            subtype='NONE')
-
 Shader.shaderpath = bpy.props.StringProperty(name="Shader Path",
                                 description="Path to custom shader",
                                 default="",
@@ -737,31 +889,15 @@ bpy.types.Lamp.renderman = bpy.props.CollectionProperty(type=Shader)
 
 bpy.types.Lamp.renderman_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
 
-bpy.types.Lamp.lightsettings = bpy.props.PointerProperty(type=RendermanLightSettings)
-
-
-RendermanLightSettings.type = bpy.props.EnumProperty(items=(
+PathProperties.lamp_type = bpy.props.EnumProperty(items=(
                                             ("spot", "Spot", "Spot Light"),
                                             ("point", "Point", "Point Light"),
                                             ("directional", "Directional", "Directional Light"),
                                             ),
                                     default="point",
                                     name="Light Type",
-                                    description="")
+                                    description="How to draw this light in Blenders Viewport")
 
-Shader.shadowtype = bpy.props.EnumProperty(items=(
-                                            ("shadowmap", "Shadowmap", "Shadowmap"),
-                                            ("raytrace", "Raytrace", "Raytraced Shadow"),
-                                            ("none", "No Shadow", "No Shadow")
-                                            ),
-                                    default="none",
-                                    name ="Shadow Type",
-                                    description="")  
-                                 
-RendermanLightSettings.shadowmaptype = bpy.props.EnumProperty(items=(
-                                                    ("deep", "Deep Shadow", ""),
-                                                    ("classic", "Classic Shadow", "")
-                                                  ), default = "classic", name="Shadowmap Type")
 #############################################
 #                                           #
 #   Object Properties                       #
@@ -769,15 +905,17 @@ RendermanLightSettings.shadowmaptype = bpy.props.EnumProperty(items=(
 #############################################
 Object = bpy.types.Object
 
-Object.renderman_camera = bpy.props.PointerProperty(type = RendermanCamera)
-
-Object.env = bpy.props.BoolProperty(default=False)
+Object.requests = bpy.props.CollectionProperty(type = ClientParameters)
 
 Object.renderman = bpy.props.CollectionProperty(type = ObjectParameters, name="Renderman")
 
 Object.renderman_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
 
 ObjectParameters.links = bpy.props.CollectionProperty(type = EmptyCollections)
+
+ObjectParameters.custom_code = bpy.props.CollectionProperty(type = CustomCodeCollection)
+
+ObjectParameters.custom_code_index = bpy.props.IntProperty(min = -1, max = 100, default = -1)
 
 ObjectParameters.attribute_groups = bpy.props.CollectionProperty(type=AttributeOptionGroup)
 
@@ -818,6 +956,8 @@ ObjectParameters.motion_samples = bpy.props.IntProperty(  name="motion samples",
 #############################################
 
 mesh = bpy.types.Mesh
+
+mesh.export_normals = bpy.props.BoolProperty(name="Export Normals", default=True)
 
 mesh.primitive_type = bpy.props.EnumProperty(   name = "PrimitiveType", 
                                                 default="pointspolygons", 
@@ -886,63 +1026,18 @@ tex.renderman = bpy.props.PointerProperty(type=RendermanTexture)
 
 RendermanTexture.type = bpy.props.EnumProperty(name="Type", default="none", items=(
                                                                     ("none", "None", ""),
-                                                                    ("envmap", "Environment Map", ""),
                                                                     ("file", "Image File", ""),
                                                                     ("bake", "Bake File", "")))
 
-RendermanTexture.envpass = bpy.props.StringProperty()
-
-RendermanTexture.process = bpy.props.BoolProperty(    name="Process",
-                                    default = True,
-                                    description = "run Texture processing tool to convert into rendermans intern texture format")
-
-RendermanTexture.filter = bpy.props.StringProperty(   name="Filter",
-                                    default ="box",
-                                    description = "Filter to use when converting the image")
-
-RendermanTexture.width = bpy.props.FloatProperty(     name ="Width",
-                                    min = 0,
-                                    max = 100,
-                                    default = 1,
-                                    description = "Filter Width")
-
-RendermanTexture.swidth = bpy.props.FloatProperty(    name = "s Width",
-                                    min = 0,
-                                    max = 100,
-                                    default = 1,
-                                    description = "Filter Width in s direction")
-
-RendermanTexture.twidth = bpy.props.FloatProperty(    name = "t Width",
-                                    min = 0,
-                                    max = 100,
-                                    default = 1,
-                                    description = "Filter Width in t direction")
-
-RendermanTexture.stwidth = bpy.props.BoolProperty(    name = "st Width",
-                                    default = False,
-                                    description = "Specify Filter Width in s and t direction separately")
-
-RendermanTexture.resolution = bpy.props.IntProperty(  min=0, 
-                                    max = 10000, 
-                                    default = 512, 
-                                    name="Resolution", 
-                                    description="Environment Map Resolution")
-                                    
-RendermanTexture.depth = bpy.props.IntProperty(   min = 1,
-                                max = 100,
-                                default = 1,
-                                name = "Depth",
-                                description = "Times the environment map is generated")
-                                
-RendermanTexture.fov = bpy.props.FloatProperty(   min=1,
-                                max = 360,
-                                default = 90,
-                                name = "FieldOfView",
-                                description = "Field of View for environment maps")                                                        
+RendermanTexture.processing = bpy.props.PointerProperty(type = ImageProcessing)                                                       
 
 mat.renderman = bpy.props.CollectionProperty(type=Shader)
 
 mat.renderman_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
+                        
+Shader.preview_scene = bpy.props.StringProperty()
+
+Shader.preview = bpy.props.BoolProperty(name="Preview", description="activate Preview", default=False)
                         
 Shader.arealight_shader = bpy.props.StringProperty(name="AreaLight", description="Area Light Shader")                        
 
@@ -985,9 +1080,11 @@ PathProperties.fullpath = bpy.props.StringProperty(default = "")
 
 PathProperties.mod_time = bpy.props.IntProperty()
 
+PathProperties.tmp_mod_time = bpy.props.IntProperty()
 
-mat.matte = bpy.props.BoolProperty(name="Matte",
-                            default=True)                            
+
+Shader.matte = bpy.props.BoolProperty(name="Matte",
+                            default=False)                            
 
 #############################################
 #                                           #
@@ -1093,6 +1190,10 @@ psettings.renderman = bpy.props.CollectionProperty(type = ParticlePasses)
 
 psettings.renderman_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
 
+ParticlePasses.custom_code = bpy.props.CollectionProperty(type = CustomCodeCollection)
+
+ParticlePasses.custom_code_index = bpy.props.IntProperty(min = -1, max = 100, default = -1)
+
 ParticlePasses.links = bpy.props.CollectionProperty(type = EmptyCollections)
 
 ParticlePasses.motion_blur = bpy.props.BoolProperty(name = "Motion Blur", default=False, description = "Activate Motion Blur for Particles")
@@ -1114,14 +1215,8 @@ ParticlePasses.group = bpy.props.StringProperty(name = "Group", description ="Ob
 
 ParticlePasses.attribute_groups = bpy.props.CollectionProperty(type=AttributeOptionGroup)
 
-ParticlePasses.shaders = bpy.props.PointerProperty(type= Shader)
-
-ParticlePasses.surface_expand = bpy.props.BoolProperty(name="Expand", description="Expand Shader", default=False)
-
-ParticlePasses.disp_expand = bpy.props.BoolProperty(name="Expand", description="Expand Shader", default=False)
-
-ParticlePasses.interior_expand = bpy.props.BoolProperty(name="Expand", description="Expand Shader", default=False)
-
-ParticlePasses.exterior_expand = bpy.props.BoolProperty(name="Expand", description="Expand Shader", default=False)
-
-ParticlePasses.arealight_expand = bpy.props.BoolProperty(name="Expand", description="Expand Shader", default=False)
+ParticlePasses.material_slot = bpy.props.IntProperty(name = "Material Slot",
+                                                     description = "Material Slot to use",
+                                                     min = -1,
+                                                     max = 100,
+                                                     default = 1)

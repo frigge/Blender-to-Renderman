@@ -61,30 +61,53 @@ light_list_size = -1
 obj_passes = {}
 pass_disp_len = {}
 
+ACTIVE_MATERIAL = None
+TEXTURE_FOLDERS = []
+
+RENDER = ""
+
+DEBUG_LEVEL = 2
+DEBUG_GROUP = ["textures"]
+
                 
 ##################################################################################################################################
 #   the fun par begins here:                                                                                                     #
 ##################################################################################################################################
-is_running = False
-class Renderman_OT_modal(bpy.types.Operator):
+class PROPERTIES_OT_maintain_renderman(bpy.types.Operator):
     bl_idname = 'renderman.maintain'
     bl_label ="maintain renderman"
+    bl_options = {'REGISTER'}
     
     def modal(self, context, event):
-        scene = context.scene
         #print("Blender to Renderman Addon Loaded")
-        if scene.render.engine == 'RENDERMAN':
-            maintain(context)
+        maintain(context)
         return {'PASS_THROUGH'}
                 
     def execute(self, context):
         wm = context.window_manager
-        global is_running
-        if not is_running:
-            context.window_manager.modal_handler_add(self)
-            is_running = True
+        global IS_RUNNING
+        if context.area.type == 'PROPERTIES':
+            dbprint("adding modal handler")
+            wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
+def restart():
+    dbprint("restart modal operator")
+    global IS_RUNNING
+    IS_RUNNING = False
+    
+def dbprint(*args, lvl=0, grp=""):
+    global DEBUG_LEVEL, DEBUG_GROUP
+    if lvl <= DEBUG_LEVEL and (len(DEBUG_GROUP) == 0 or grp in DEBUG_GROUP or grp == ""):
+        print(*args)
+        
+def preview_mat():
+    global ACTIVE_MATERIAL, RENDER
+    return ACTIVE_MATERIAL, RENDER
+
+def set_preview_mat(mat):
+    global ACTIVE_MATERIAL
+    ACTIVE_MATERIAL = mat
 #########################################################################################################
 #                                                                                                       #
 #       functions for keeping things up-to-date                                                         #
@@ -94,7 +117,7 @@ def getactivepass(scene):
     rm = scene.renderman_settings
     passes = rm.passes
     active_pass = None
-    if rm.passes_index >= len(rm.passes) or rm.passes_index < len(rm.passes):
+    if rm.passes_index >= len(rm.passes) or rm.passes_index == -1:
         bpy.ops.renderman.set_pass_index()
     try:
         active_pass = passes[rm.passes_index]
@@ -103,14 +126,10 @@ def getactivepass(scene):
     return active_pass
     
     
-def getname(raw, name = "", pass_name = "", var = "", driver = "", dir = "", sce = None):
-    if sce == None:
-        global scene
-        sce = scene
-    else:
-        scene = sce
+def getname(raw, name = "", pass_name = "", var = "", driver = "", dir = "", frame = "", scene = None):
     n = raw.replace('[scene]', scene.name)
-    n = n.replace('[frame]', framepadding(scene))
+    if frame != "":
+        n = n.replace('[frame]', frame)
     if name != "":
         n = n.replace('[name]', name)
     if pass_name != "":
@@ -137,7 +156,7 @@ def shader_info(shader, collection, scene):
     shaderpaths = shaders.shaderpaths
     if len(shaderpaths) >= 1:
         if len(shadercollection) >= 1:
-            if shader:
+            if shader in shaders.shadercollection:
                 info = shaders.shadercollection[shader].fullpath
             else:
                 info="No shader selected"
@@ -191,88 +210,18 @@ def getdefaultribpath(scene):
     return defaultpath
 
 def getrendererdir(scene):
-    if scene.renderman_settings.use_env_var and not scene.renderman_settings.renderenvvar == "":
+    if (scene.renderman_settings.use_env_var
+        and not scene.renderman_settings.renderenvvar == ""):
         renderdir = os.environ[scene.renderman_settings.renderenvvar]
     else:
         renderdir = scene.renderman_settings.renderpath
     renderdir += "/bin/"
     return renderdir
-
-def addenvironmentmappass(object, texture, scene):
-    passes = scene.renderman_settings.passes
-    envmap = object.name + "_environment"
-#    envmap = [  envmap_base + "_px", envmap_base + "_nx", 
-#                envmap_base + "_py", envmap_base + "_ny", 
-#                envmap_base + "_pz", envmap_base + "_nz"]
-#    for env in envmap:
-    if envmap not in passes:
-        global assigned_shaders
-        assigned_shaders = {}
-        passes.add().name = envmap
-        envpass = passes[envmap]
-        adddisp(envpass, name=envmap, display="file")
-        shadowindex = -1
-        for index, item in enumerate(passes):
-            if item.shadow:
-                shadowindex = index
-            elif item.name == envmap and not passes[index-1] == passes[shadowindex]:
-                passes.move(index, shadowindex+1)
-    
-    envpass = passes[envmap]        
-    envpass.environment = True
-    envpass.envname = texture.name
-    texture.renderman.envpass = envpass.name
-    envpass.imagedir = scene.renderman_settings.envdir
-    envpass.camera_object = object.name
-    envdisp = envpass.displaydrivers[envmap+'01']
-    envdisp.displaydriver = "file"
-    if texture.environment_map.source == "STATIC":
-        envpass.exportanimation = False
-    else:
-        envpass.exportanimation = True
-
-def addpass(name, scene):
-    rmansettings = scene.renderman_settings
-    scene_passes = rmansettings.passes
-        
-    if not name in scene_passes: scene_passes.add().name = name
-
-def addshadowmappass(shadowname, name, scene):
-    light = scene.objects[name]
-    lightsettings = light.data.lightsettings
-    rmansettings = scene.renderman_settings
-    maptype = {"classic" : rmansettings.defaultshadow, "deep" : rmansettings.deepdisplay}        
-    passes = rmansettings.passes
-    exist = False
-    if not shadowname in passes:
-        global assigned_shaders
-        assigned_shaders = {}
-        addpass(shadowname, scene)
-        shadowpass = passes[shadowname]
-        adddisp(shadowpass, name="shadowmap", display=maptype[lightsettings.shadowmaptype], var="z")
-        
-        for passindex, item in enumerate(passes):
-            if item.name == shadowname and not passes[passindex-1].shadow:
-                passes.move(passindex, 0)
-
-    shadowpass = passes[shadowname]
-    shadowpass.shadow = True
-    shadowpass.imagedir = rmansettings.shadowdir    
-    shadowpass.camera_object = name
-    shadowpass.exportlights = False
-    shadowpass.lightgroup = ""
-    shadowdisplay = shadowpass.displaydrivers['shadowmap01']
-    shadowdisplay.displaydriver = maptype[lightsettings.shadowmaptype]
-                                          
             
 def maintain_display_drivers(current_pass, scene):
-    path = getdefaultribpath(scene)
+    path = os.path.join(getdefaultribpath(scene), current_pass.imagedir)
     rmansettings = scene.renderman_settings
-    shad = rmansettings.defaultshadow
-    deep = rmansettings.deepdisplay
-    
-    oilist = rmansettings.output_images
-    
+        
     quant_presets = {   "8bit" : [0, 255, 0, 255],
                         "16bit" : [0, 65535, 0, 65535],
                         "32bit" : [0, 0, 0, 0]
@@ -280,12 +229,16 @@ def maintain_display_drivers(current_pass, scene):
                                         
     for display in current_pass.displaydrivers:
         disp_drv = display.displaydriver      
-        imagepath = os.path.join(path, current_pass.imagedir)
 
         if display.default_name:
-            display.raw_name = '[name]_[pass]_[var][frame].[driver]'
+            if current_pass.environment:
+                display.raw_name = '[name]_[pass]_[var]_[dir]_[frame].[driver]'
+            else:
+                display.raw_name = '[name]_[pass]_[var][frame].[driver]'
+                
                    
-        display.file = os.path.join(imagepath, display.filename).replace('\\', '\\\\')
+        display.file = os.path.join(path,
+                                    display.filename).replace('\\', '\\\\')
         
         if display.quantize_presets != "other":
             quant = quant_presets[display.quantize_presets]
@@ -300,23 +253,16 @@ def maintain_display_drivers(current_pass, scene):
                     pass_name = current_pass.name,
                     var = display.var,
                     driver = disp_drv,
-                    sce = scene)
+                    scene = scene)
                     
         display.filename = n
         
-        if not n in oilist:
-            oilist.add().name = n 
-
-        global pass_disp_len
-        passes_len = len(scene.renderman_settings.passes)
-        if passes_len != len(pass_disp_len) or not current_pass.name in pass_disp_len or pass_disp_len[current_pass.name] != len(current_pass.displaydrivers):
-            for i, o in enumerate(oilist):
-                e = False
-                for p in scene.renderman_settings.passes:
-                    pass_disp_len[p.name] = len(p.displaydrivers)
-                    for d in p.displaydrivers:
-                        if o == d.filename: e = True
-                if not e: oilist.remove(i)
+        if display.processing.default_output:
+            ext = checkextension(display.filename)
+            disp_pr = display.processing
+            finext = 'shd' if disp_pr.shadow else rmansettings.textureext 
+            disp_pr.output = display.filename.replace(ext,
+                                                      finext)
 
 def update_illuminate_list(obj, scene):
     global light_list
@@ -363,11 +309,6 @@ def check_displaydrivers(scene):
                     
                 display_drivers.append(driver)
                 
-        if rmansettings.defaultshadow not in display_drivers:
-            display_drivers.append(rmansettings.defaultshadow)
-        if rmansettings.deepdisplay not in display_drivers:
-            display_drivers.append(rmansettings.deepdisplay)               
-        
         for drv in display_drivers:
             if drv not in rmansettings.displays:
                 rmansettings.displays.add().name = drv
@@ -397,27 +338,39 @@ def maintain_searchpaths(current_pass, scene):
 
     if not "searchpath" in rmansettings.option_groups:
         rmansettings.option_groups.add().name = "searchpath"
-    rmansettings.option_groups['searchpath'].export = True
+    if not "searchpath" in current_pass.option_groups:
+        current_pass.option_groups.add().name = "searchpath"
+    current_pass.option_groups['searchpath'].export = True
           
-    master_searchpath = rmansettings.option_groups["searchpath"].options      
+    master_searchpath = rmansettings.option_groups["searchpath"].options
+    slave_searchpath = current_pass.option_groups["searchpath"].options
 
     def maintain_searchpath(name, value):
         if not name in master_searchpath:
-            master_searchpath.add().name = name     
+            master_searchpath.add().name = name
+        if not name in slave_searchpath:
+            slave_searchpath.add().name = name     
         searchpath_option = master_searchpath[name]
         searchpath_option.export = True
         searchpath_option.parametertype = "string"
         searchpath_option.textparameter = value.replace('\\', '\\\\')
-    
-        try:
-            slave_searchpath = current_pass.option_groups["searchpath"]
-        except KeyError:
-            return 0
         
         slave = current_pass.option_groups["searchpath"].options[name]
         copy_parameter(slave, searchpath_option)
     
-    texpath = os.path.join(getdefaultribpath(scene), rmansettings.texdir)        ##texture searchpath
+    texdir = rmansettings.texdir        ##texture searchpath
+    global TEXTURE_FOLDERS
+    if not texdir in TEXTURE_FOLDERS:
+        TEXTURE_FOLDERS.append(texdir)
+    
+    if not current_pass.imagedir in TEXTURE_FOLDERS:
+        TEXTURE_FOLDERS.append(current_pass.imagedir)
+    
+    paths = []
+    for dir in TEXTURE_FOLDERS:
+        paths.append(os.path.join(getdefaultribpath(scene), dir))
+    
+    texpath = ':'.join(paths)
     maintain_searchpath('texture', texpath)                    
 
     if rmansettings.shaders.shaderpaths:                             ##shader searchpath
@@ -466,7 +419,6 @@ def create_render_layers(current_pass, scene):
 def copy_parameters(master_groups, slave_groups, options = True):    
     for master_group in master_groups:
         slave_group = slave_groups[master_group.name]
-        master_group.export = slave_group.export
         if options:
             masters = master_group.options
             slaves = slave_group.options
@@ -481,13 +433,11 @@ def copy_parameters(master_groups, slave_groups, options = True):
 def copy_parameter(master, slave):
     master.parametertype = slave.parametertype
     master.textparameter = slave.textparameter
-    master.colorparameter = slave.colorparameter
-    try:
-        master.export = slave.export
-    except:
-        pass        
+    master.input_type = slave.input_type
+    master.use_var = slave.use_var
+    master.colorparameter = slave.colorparameter   
     master.vector_size = slave.vector_size
-    master.texture = slave.texture
+    master.input_type = slave.input_type
     master.int_one[0] = slave.int_one[0]
     master.int_two[0] = slave.int_two[0]
     master.int_two[1] = slave.int_two[1]
@@ -537,12 +487,12 @@ def maintain_parameters(master_groups, slave_groups, scene, options = True, obj=
             
     for group_index, slave_group in enumerate(slave_groups):
         if slave_group.name not in master_groups:
-            print("remove group", slave_group.name, slave_groups)
+            dbprint("remove group", slave_group.name, slave_groups, lvl=1, grp="attropt")
             slave_groups.remove(group_index)
             
     if len(slave_groups) != len(master_groups):
         for sg in slave_groups:
-            print(slave_groups, len(slave_groups), "!=", master_groups, len(master_groups))
+            dbprint(slave_groups, len(slave_groups), "!=", master_groups, len(master_groups, lvl=1, grp="attropt"))
             slave_groups.remove(0)            
             
     sort_collection(slave_groups)    
@@ -558,7 +508,7 @@ def maintain_beauty_pass(scene):
     if renderman_settings.passes:
         if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
             renderman_settings.passes_index = 0
-        elif renderman_settings.searchpass:
+        elif renderman_settings.searchpass != "":
             for i, passes in enumerate(renderman_settings.passes):
                 if passes.name == renderman_settings.searchpass:
                     renderman_settings.passes_index = i
@@ -582,114 +532,30 @@ def maintain_hiders(current_pass, scene):
     maintain_parameters(master_hiders, slave_hiders, scene)    
     
     if current_pass.hider == '':
-        current_pass.hider = rmansettings.default_hider
-
-def maintain_options(current_pass, scene):             ###maintain options for every pass
-    rmansettings = scene.renderman_settings
-    master_groups = rmansettings.option_groups
-    slave_groups = current_pass.option_groups
-    
-    maintain_parameters(master_groups, slave_groups, scene)   
-
-def checkForEnvMap(obj, scene):
-    env = False
-    texture = None
-    if obj.active_material:
-        textures = obj.active_material.texture_slots
-        for mpass in obj.active_material.renderman:
-            shader_parameter = obj.active_material.renderman[mpass.name].surface_shader_parameter
-            for parm in shader_parameter:
-                if parm.texture and parm.textparameter != "":
-                    try:
-                        texture = textures[parm.textparameter].texture
-                        if texture.type == "ENVIRONMENT_MAP" and not texture.environment_map.source == "IMAGE_FILE":
-                            env = True
-                    except KeyError:
-                        print("Texture Not Found")
-    return env, texture
-    
-def maintain_environment_map_passes(obj, scene):
-    passes = scene.renderman_settings.passes
-
-    env, texture = checkForEnvMap(obj, scene)
-
-    if env:                    
-        addenvironmentmappass(obj, texture, scene)                
-    
-def clear_envmap_passes(pass_number, scene):
-    ##clear envmap passes when not needed anymore
-    global assigned_shaders
-    passes = scene.renderman_settings.passes
-
-    if pass_number < len(passes):    
-        item = passes[pass_number]
-        if item.camera_object:
-            if not item.camera_object in scene.objects:
-                passes.remove(pass_number)
-                global assigned_shaders
-                assigned_shaders = {}
-            else:
-                obj = scene.objects[item.camera_object]
-                if not obj.type == "LAMP":
-                    env, texture = checkForEnvMap(obj, scene)
-                    if item.environment and not env:
-                        print("killing envmap pass")
-                        passes.remove(pass_number)
-                        assigned_shaders = {}
-                        pass_number -= 1
-    
-    return pass_number
-
-    
-    
-def maintain_shadowmap_passes(obj, scene):
-    passes = scene.renderman_settings.passes
-    if obj.type == "LAMP":                    
-        name = obj.name
-        shadowname = name+"_shadowmap"
-        shadow = False
-        try:
-            for lpass in obj.data.renderman:
-                if lpass.shadowtype == "shadowmap":
-                    shadow = True
-        except AttributeError:
-            pass
-        
-        if shadow:                     
-            addshadowmappass(shadowname, name, scene)        
-            shadowpass = passes[shadowname]           
-            if obj.data.type == "POINT":                
-                shadowpass.environment = True
-            else:
-                shadowpass.environment = False
-
-        def remove(index):
-            global assigned_shaders
-            assigned_shaders = {}
-            passes.remove(index)
-        
-        for passindex, item in enumerate(passes):
-            if item.shadow:                
-                try:
-                    shadowlight = scene.objects[item.camera_object]
-                    shadow = False                
-                    for lpass in shadowlight.data.renderman:                
-                        if lpass.shadowtype == "shadowmap":
-                            shadow = True
-                    if not shadow:      
-                        remove(passindex)
-                except KeyError:
-                    remove(passindex)
-
+        if rmansettings.default_hider in rmansettings.hider_list:
+            current_pass.hider = rmansettings.default_hider
+            
+def maintain_display_options(rpass, rm):
+    for disp in rpass.displaydrivers:
+        if disp.displaydriver in rm.displays:
+            for opt in rm.displays[disp.displaydriver].custom_parameter:
+                if not opt.name in disp.custom_options:
+                    disp.custom_options.add().name = opt.name
+                    copt = disp.custom_options[opt.name]
+                    copy_parameter(copt, opt)
+            for i, copt in enumerate(disp.custom_options):
+                if copt.use_var:
+                    copt.textparameter = disp.var
+                if copt.name not in rm.displays[disp.displaydriver].custom_parameter:
+                    disp.custom_options.remove(i)
 
 
 def maintain_light(light, scene):
     if light.type == "LAMP":
-        rc = light.renderman_camera
-        ls = light.data.lightsettings
         global obj_passes, assigned_shaders
         rm = light.data.renderman
-        if not light.name in obj_passes or len(rm) != obj_passes[light.name]:
+        if not light.name in obj_passes: obj_passes[light.name] = []
+        if len(rm) != len(obj_passes[light.name]):
             if light.name in assigned_shaders:
                 lshaders = assigned_shaders[light.name]
                 for l in lshaders:
@@ -698,23 +564,24 @@ def maintain_light(light, scene):
                         break
                         
         for lpass in rm:
+            if not lpass.name in obj_passes[light.name]:
+                obj_passes[light.name].append(lpass.name)
+            shader = lpass.shaderpath
+            
             parameter = lpass.light_shader_parameter
             active_parameter = light.data.renderman[light.data.renderman_index].light_shader_parameter
-            if lpass.shadowtype == "shadowmap":
-                shadowname = light.name + "_shadowmap"         
-                addshadowmappass(shadowname, light.name, scene)
-                shadowmap_unprocessed = scene.renderman_settings.passes[shadowname].displaydrivers[0].filename
-                shadowmapname = shadowmap_unprocessed.replace("[frame]", framepadding(scene))
-            elif lpass.shadowtype == 'raytrace':
-                shadowname = ""
-                shadowmapname = "raytrace"
-            type = ls.type
+            light_shaders = scene.renderman_settings.shaders.light_collection
+            if shader != "" and shader in light_shaders:
+                type = light_shaders[shader].lamp_type
+            else:
+                type = "point"
             
             if type == 'spot':
-                if light.data.shadow_method == "BUFFER_SHADOW":
-                    light.data.shadow_buffer_clip_start = rc.near_clipping
-                    light.data.shadow_buffer_clip_end = rc.far_clipping
-            
+                light.data.type = 'SPOT'
+                light.data.shadow_method = "BUFFER_SHADOW"
+                #light.data.shadow_buffer_clip_start = rc.near_clipping TODO: need to get the right requested pass
+                #light.data.shadow_buffer_clip_end = rc.far_clipping
+        
             lrotx = light.rotation_euler[0]
             lroty = light.rotation_euler[1]
             lrotz = light.rotation_euler[2]   
@@ -745,46 +612,15 @@ def maintain_light(light, scene):
                             active_parameter.int_one[0] = value
                         elif type == "string":                                       
                             active_parameter.textparameter = value
-            
-            chsh = checkshaderparameter
-            
-            mappings = scene.renderman_settings.mappings
-            
+                        
             if type == 'point':
                 light.data.type = 'POINT'
-                dirs = ["px", "nx", "py", "ny", "pz", "nz"]
-                if lpass.shadowtype == "shadowmap":
-                    if not lpass.customshader:
-                        lpass.shaderpath = mappings.shadowpointshader
-                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                    for dir in dirs:
-                        maintainitem(mappings.point_shadowpref+dir, shadowmapname.replace("[dir]", dir))
-                elif lpass.shadowtype == "raytrace":
-                    if not lpass.customshader:
-                        lpass.shaderpath = mappings.shadowpointshader
-                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                    for dir in dirs:
-                        maintainitem(mappings.point_shadowpref+dir, "raytrace")
-                else:
-                    if not lpass.customshader:
-                        lpass.shaderpath = mappings.pointshader
-                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
                 if "lightcolor" in active_parameter:
                     light.data.color = active_parameter["lightcolor"].colorparameter
                 if "intensity" in active_parameter:
                     light.data.energy = active_parameter["intensity"].float_one[0]
             
             elif type == 'spot':
-                light.data.type = 'SPOT'
-                if lpass.shadowtype == "shadowmap" or lpass.shadowtype == "raytrace":
-                    if not lpass.customshader:
-                        lpass.shaderpath = mappings.shadowspotshader
-                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                    maintainitem(mappings.shadowmap, shadowmapname.replace("[dir]", ""))
-                else:
-                    if not lpass.customshader:
-                        lpass.shaderpath = mappings.spotshader
-                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
                 if "lightcolor" in active_parameter:
                     light.data.color = active_parameter["lightcolor"].colorparameter
                 if "intensitiy" in active_parameter:
@@ -800,17 +636,6 @@ def maintain_light(light, scene):
             
             elif type == 'directional':
                 light.data.type = 'SUN'
-                if lpass.shadowtype == "shadowmap":
-                    if not lpass.customshader:
-                        lpass.shaderpath = mappings.shadowdistantshader
-                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
-                    maintainitem(mappings.shadowmap, shadowmapname)
-                elif lpass.shadowtype == "raytrace":
-                    maintainitem(mappings.shadowmap, "raytrace")
-                else:
-                    if not lpass.customshader:
-                        lpass.shaderpath = mappings.distantshader
-                    chsh(light.name, lpass, lpass.shaderpath, parameter, scene)
                 if "lightcolor" in active_parameter:
                     light.data.color = active_parameter["lightcolor"].colorparameter
                 if "intensity" in active_parameter:
@@ -826,13 +651,23 @@ def objpass(p):
     return p.renderman[p.renderman_index]
 
 def linked_pass(p, rpass):
+    lpass = None
     for lp in p.renderman:
         if rpass.name in lp.links:
-            return lp
+            lpass = lp
+            
+    if lpass == None:
+        print(repr(p))
+    return lpass
+        
 
 def maintain_lists(scene):
-    global light_list, objects_size
+    global light_list, objects_size, assigned_shaders
+    dbprint("objects in scene", objects_size, lvl=2, grp="lists")
     if not len(scene.objects) == objects_size:
+        objects_size = len(scene.objects)
+        assigned_shaders = {}
+        dbprint("assigned_shaders reset at maintain_list()", lvl=2, grp="assigned_shaders")
         try:
             for obj in scene.objects:
                 if not obj.type == 'LAMP':
@@ -844,12 +679,18 @@ def maintain_lists(scene):
                 if (obj.type == 'LAMP' or al) and not obj.name in light_list:
                     light_list.append(obj.name)
                     
-            for i, obj in enumerate(light_list):
-                if not obj in scene.objects:
-                    light_list.pop(i)
-                    
         except UnicodeDecodeError:
-            pass         
+            pass
+        
+    for i, obj in enumerate(light_list):
+        if not obj in scene.objects:
+            light_list.pop(i)
+        else:
+            object = scene.objects[obj]
+            if object.type != "LAMP":
+                am = object.active_material
+                if not am or objpass(am).arealight_shader == "":
+                    light_list.pop(i)
 
 class Renderman_OT_set_Active_Camera(bpy.types.Operator):
     bl_label = ""
@@ -865,27 +706,33 @@ def maintain_camera(rpass, scene):
     if rpass.camera_object == "" and scene.camera:
         rpass.camera_object = scene.camera.name
     rd = scene.render
-    apass_cam_name = getactivepass(scene).camera_object
-    if apass_cam_name != "" and apass_cam_name in scene.objects:
-        apass_cam = scene.objects[apass_cam_name]
-        rc = apass_cam.renderman_camera
-        rd.resolution_x = rc.resx
-        rd.resolution_y = rc.resy
-        bpy.ops.renderman.set_active_camera(cam = apass_cam_name)
+    rc = rpass.renderman_camera
+    if rc.square:
+        rc.resy = rc.resx
+    
+def sync_BI_dimensions(scene):
+    apass = getactivepass(scene)
+    rd = scene.render
+    rc = apass.renderman_camera
+    rd.resolution_x = rc.resx
+    rd.resolution_y = rc.resy
+    rd.resolution_percentage = rc.respercentage   
 
 def maintain_rib_structure(scene):
     rm = scene.renderman_settings
     rs = rm.rib_structure
     
-    types = {   rs.render_pass : ["[pass][frame]", "Passes"],
-                rs.settings : ["[pass]_Settings[frame]", "Settings"],
-                rs.world : ["[pass]_World[frame]", "Worlds"],
+    types = {   rs.render_pass : ["[pass]_[dir][frame]", "Passes"],
+                rs.settings : ["[pass]_Settings_[dir][frame]", "Settings"],
+                rs.world : ["[pass]_World_[dir][frame]", "Worlds"],
                 rs.objects : ["[name]_[pass][frame]", "Objects"],
                 rs.lights : ["[name]_[pass][frame]", "Lights"],
                 rs.meshes : ["[name][frame]", "Meshes"],
                 rs.particles : ["[name]_[pass][frame]", "Particles"],
+                rs.particle_data : ["[name]_[pass][frame]", "Particle_Data"],
                 rs.materials : ["[name]_[pass][frame]", "Materials"],
-                rs.object_blocks : ["instances_[pass][frame]", "Instances"]}
+                rs.object_blocks : ["instances_[pass][frame]", "Instances"],
+                rs.frame : ["[frame]", ""]}
     
     for p in types:            
         if p.filename == "" or p.default_name:
@@ -893,100 +740,435 @@ def maintain_rib_structure(scene):
         if p.folder == "":
             p.folder = types[p][1]
 
-def maintain_assigned_shaders(context):
-    ap = getactivepass(context.scene)
-    gs = ap.global_shader
+def maintain_world_shaders(rpass, scene):
+    gs = rpass.global_shader
     cs = checkshaderparameter
-    world_shaders = (   ("worldi", ap, ap.imager_shader, ap.imager_shader_parameter),
-                        ("worlds", ap, gs.surface_shader, gs.surface_shader_parameter),
-                        ("worlda", ap, gs.atmosphere_shader, gs.atmosphere_shader_parameter))
+    world_shaders = (   ("worldi", rpass, rpass.imager_shader, rpass.imager_shader_parameter),
+                        ("worlds", rpass, gs.surface_shader, gs.surface_shader_parameter),
+                        ("worlda", rpass, gs.atmosphere_shader, gs.atmosphere_shader_parameter))
     for ws in world_shaders:
-        cs(ws[0], ws[1], ws[2], ws[3], context.scene)
-    
-    ob = context.object                    
-    if ob:
-        if not ob.type in ['LAMP', 'CAMERA', 'EMPTY', 'LATTICE', 'ARMATURE']:
-            am = ob.active_material
-            if am:
-                rm = am.renderman[am.renderman_index]
-                obm_shd = ( (am.name+"surf", rm, rm.surface_shader, rm.surface_shader_parameter),
-                            (am.name+"disp", rm, rm.displacement_shader, rm.disp_shader_parameter),
-                            (am.name+"int", rm, rm.interior_shader, rm.interior_shader_parameter),
-                            (am.name+"ext", rm, rm.exterior_shader, rm.exterior_shader_parameter),
-                            (am.name+"al", rm, rm.arealight_shader, rm.light_shader_parameter))
-                for os in obm_shd:
-                    cs(os[0], os[1], os[2], os[3], context.scene)
-                    
-            if ob.particle_systems:
-                for p in ob.particle_systems:
-                    rm = p.settings.renderman[p.settings.renderman_index]
-                    pshad = (   (ob.name+p.name+"surf", rm, rm.shaders.surface_shader, rm.shaders.surface_shader_parameter),
-                                (ob.name+p.name+"disp", rm, rm.shaders.displacement_shader, rm.shaders.disp_shader_parameter),
-                                (ob.name+p.name+"int", rm, rm.shaders.interior_shader, rm.shaders.interior_shader_parameter),
-                                (ob.name+p.name+"ext", rm, rm.shaders.exterior_shader, rm.shaders.exterior_shader_parameter),
-                                (ob.name+p.name+"area", rm, rm.shaders.arealight_shader, rm.shaders.light_shader_parameter))
-                    for ps in pshad:
-                        cs(ps[0], ps[1], ps[2], ps[3], context.scene)
-                    
-        elif context.object.type == 'LAMP':
-            l = context.object
-            ld = l.data
-            try:
-                rm = ld.renderman[l.renderman_index]
-                cs(l.name, rm, rm.shaderpath, rm.light_shader_parameter, context.scene) 
-            except IndexError:
-                pass
+        cs(ws[0], ws[1], ws[2], ws[3], scene)
+        
+def maintain_material_shaders(m, scene):
+    cs = checkshaderparameter
+    rm = m.renderman[m.renderman_index]
+    obm_shd = ( (m.name+"surf", rm, rm.surface_shader, rm.surface_shader_parameter),
+                (m.name+"disp", rm, rm.displacement_shader, rm.disp_shader_parameter),
+                (m.name+"int", rm, rm.interior_shader, rm.interior_shader_parameter),
+                (m.name+"ext", rm, rm.exterior_shader, rm.exterior_shader_parameter),
+                (m.name+"al", rm, rm.arealight_shader, rm.light_shader_parameter))
+    for os in obm_shd:
+        cs(os[0], os[1], os[2], os[3], scene)
 
+def maintain_lamp_shaders(l, scene):
+    cs = checkshaderparameter                                
+    ld = l.data
+    try:
+        rm = ld.renderman[ld.renderman_index]
+        dbprint("check light", l.name, ":", rm.name, lvl=2, grp="maintain_lamp_shaders")
+        cs(l.name, rm, rm.shaderpath, rm.light_shader_parameter, scene) 
+    except IndexError:
+        pass
+
+def maintain_custom_code(rpass, rm):
+    oirpass = rpass.output_images
+    if rpass.world_code:
+        for wc in rpass.world_code:
+            p = wc.parameter
+            if (p.input_type == 'display'
+                and p.textparameter in oirpass
+                and wc.default_output):
+                txt = p.textparameter
+                if wc.makeshadow:
+                    wc.name = "MakeShadow"
+                    wc.output = txt.replace(checkextension(txt), '.shd')
+                elif wc.makecubefaceenv:
+                    wc.name = "MakeCubeFaceEnvironment"
+                    txt = txt.replace(checkextension(txt),
+                                      '.' + rm.textureext)
+                    txt = txt.replace("[dir]", "")
+                    wc.output = txt
+
+def maintain_output_images(rm, rpass):
+    oirpass = rpass.output_images
+    oi = rm.output_images
+    for disp in rpass.displaydrivers:
+        if disp.displaydriver != "framebuffer":
+            if disp.processing.process and disp.processing.output != "":
+                output = disp.processing.output
+            else:
+                output = disp.filename
+            if not output in oirpass:
+                oirpass.add().name = output
+                oirpass[output].render_pass = rpass.name
+            
+            if rpass.world_code:
+                for wc in rpass.world_code:
+                    if (wc.parameter.input_type == 'display'
+                        and wc.parameter.textparameter in oirpass
+                        and (wc.makeshadow or wc.makecubefaceenv)):
+                            output = wc.output
+            
+            if not output in oi:
+                oi.add().name = output
+                oi[output].render_pass = rpass.name
+
+    for i, img in enumerate(oirpass):
+        erase = True
+        if img.render_pass != "" and img.render_pass in rm.passes:
+            erase = False
+        for disp in rpass.displaydrivers:
+            if disp.processing.process and disp.processing.output != "":
+                output = disp.processing.output
+            else:
+                output = disp.filename
+            if img.name == output:
+                erase = False
+        if erase:
+            oirpass.remove(i)    
+    
+    for i, img in enumerate(oi):
+        erase = True
+        if img.render_pass != "" and img.render_pass in rm.passes:
+            erase = False
+            if img.render_pass == rpass.name:
+                erase = True
+                for disp in rpass.displaydrivers:
+                    if disp.processing.process and disp.processing.output != "":
+                        output = disp.processing.output
+                    else:
+                        output = disp.filename
+                        
+                    if rpass.world_code:
+                        for wc in rpass.world_code:
+                            if (wc.parameter.input_type == 'display'
+                                and wc.parameter.textparameter in oirpass
+                                and (wc.makeshadow or wc.makecubefaceenv)):
+                                    output = wc.output
+                                
+                    if img.name == output:
+                        erase = False
+        if erase:
+            oi.remove(i)
+
+shader_count = -1
+def load_shaders(scene):
+    rm = scene.renderman_settings
+    global shader_sorted, shader_count
+    scollection = rm.shaders.shadercollection
+
+    surf_coll = rm.shaders.surface_collection
+    disp_coll = rm.shaders.displacement_collection
+    vol_coll = rm.shaders.volume_collection
+    l_coll = rm.shaders.light_collection
+    img_coll = rm.shaders.imager_collection
+    
+    sl = len(surf_coll)
+    dl = len(disp_coll)
+    vl = len(vol_coll)
+    ll = len(l_coll)
+    il = len(img_coll)
+    listslen = sl + dl + vl + ll + il
+
+    def copy_shader(shdname, dest):
+        src_shd = scollection[shdname]
+        if not shdname in dest:
+            dest.add().name = shdname
+            dest_shd = dest[shdname]
+            dest_shd.fullpath = src_shd.fullpath
+        dest_shd = dest[shdname]
+        if shdname.find("distant") != -1: dest_shd.lamp_type = "directional"
+        elif shdname.find("spot") != -1: dest_shd.lamp_type = "spot"
+    
+    if len(scollection) != shader_count or len(scollection) != listslen:
+        shader_count = len(scollection)
+        i = -1
+        for s in scollection:
+            i += 1
+            tmpfile = get_shaderinfo(s.name, scollection, scene)
+            if tmpfile:
+                info = open(tmpfile, "r")
+                i = -1
+                shadertype = ""
+                while True:
+                    i += 1
+                    line = info.readline()
+                    if line != "":
+                        data = line.split()
+                        if len(data) == 2:
+                            shadertype = data[0]
+                            break
+                    ## emergency break if something is wrong with the info:
+                    if i > 4: break
+                
+                if shadertype == "surface":
+                    copy_shader(s.name, surf_coll)
+                elif shadertype == "volume":
+                    copy_shader(s.name, vol_coll)
+                elif shadertype == "light":
+                    copy_shader(s.name, l_coll)
+                elif shadertype == "imager":
+                    copy_shader(s.name, img_coll)
+                elif shadertype == "displacement":
+                    copy_shader(s.name, disp_coll)
+
+pass_preset_outputs = {}
+def load_pass_presets(scene):
+    active_engine = scene.renderman_settings.active_engine
+    main_preset_path = bpy.utils.preset_paths('renderman')[0]
+    preset_dir = os.path.join(main_preset_path, active_engine)
+
+    def read_outputs(p):
+        global pass_preset_outputs
+        preset = p.replace(preset_dir, "")
+        preset = preset.replace("\\", "/")
+        preset = preset.replace(".pass", "")
+
+        if not preset in pass_preset_outputs: ##TODO: bake textures
+            outputs = []
+            f = open(p, "r")
+            lines = f.readlines()
+
+            for l in lines:
+                if l.find("NewDisplay") != -1:
+                    outputs.append(l.split()[1])
+            pass_preset_outputs[preset] = outputs
+
+    def look(prdir):
+        for pr in os.listdir(prdir):
+            path = os.path.join(prdir, pr)
+            if os.path.isdir(path):
+                look(path)
+            else:
+                try:
+                    read_outputs(path)
+                except UnicodeDecodeError:
+                    pass
+    if os.path.exists(preset_dir):
+        look(preset_dir)
+
+                    
+def initial_load_data(scene):
+    rm = scene.renderman_settings
+    load_shaders(scene)
+    load_pass_presets(scene)
+
+
+def maintain_client_passes_add(obj, scene):
+    rm = scene.renderman_settings
+    for request_index, request in enumerate(obj.requests):
+        request.index = request_index
+        request.client = obj.name
+        try:
+            parm_path = eval('obj.'+request.name)
+            output = request.output
+            parm_name = parm_path.name
+            dirs = ['px', 'nx', 'py', 'ny', 'pz', 'nz']
+            parmdir = ""
+            for dir in dirs:
+                parm_name = parm_name.replace(dir, "")
+                if parm_path.name.find(dir) != -1:
+                    parmdir = dir
+            rpass_name = "_".join([request.client, parm_name, output])
+            request.pass_name = rpass_name
+            if not rpass_name in rm.passes:
+                dbprint(rpass_name, lvl=1, grp="rpass")
+                rm.passes.add().name = rpass_name
+                rpass = rm.passes[rpass_name]
+                rpass.client = obj.name
+                rpass.camera_object = obj.name
+                rpass.requested = True
+                maintain_render_passes(rpass, scene)
+                export_renderman.ops.invoke_preset(rpass, request.preset, scene)
+                
+                cl_pass_index = -1
+                render_pass_index = -1
+                for i in range(len(rm.passes)):
+                    if rm.passes[i] == rpass:
+                        cl_pass_index = i
+                    elif rm.passes[i].name == request.render_pass:
+                        render_pass_index = i
+                rm.passes.move(cl_pass_index, render_pass_index)
+                
+            rpass = rm.passes[rpass_name]
+
+            if obj.type == 'LAMP':
+                objpass = obj.data.renderman[request.request_pass]
+                objshader = rm.shaders.light_collection[objpass.shaderpath]
+            if obj.type not in ["CAMERA", "LAMP"] or (obj.type == "LAMP" and objshader.lamp_type not in ['directional', 'spot']):
+                rpass.environment = True
+            else:
+                rpass.environment = False
+                    
+            dbprint(request.name, lvl=1, grp="requests")
+            out_disp = rpass.displaydrivers[output]
+            if out_disp.processing.process and out_disp.processing.output != "":
+                o = out_disp.processing.output
+            else:
+                o = out_disp.filename
+            parm_path.textparameter = o.replace("[dir]", parmdir)
+        except KeyError:
+            obj.requests.remove(request_index)
+    
+def maintain_client_passes_remove(i, rpass, scene):
+    if rpass.requested:
+        if rpass.client != "" and (not rpass.client in scene.objects):
+            dbprint("removing", rpass, "01", lvl=1, grp="requests")
+            scene.renderman_settings.passes.remove(i)
+        elif rpass.client != "":
+            exists = False
+            for request in scene.objects[rpass.client].requests:
+                if request.pass_name == rpass.name:
+                    exists = True
+            if not exists:
+                scene.renderman_settings.passes.remove(i)
+                dbprint("removing", rpass, "02", lvl=1, grp="requests")
+        else: ##a rpass is a client
+            exists = False
+            for request in scene.renderman_settings.requests:
+                if rpass.name == request.pass_name:
+                    exists = True
+            if not exists:
+                scene.renderman_settings.passes.remove(i)
+                dbprint("removing", rpass, "03", lvl=1, grp="requests")
+
+def maintain_render_passes(rpass, scene):
+    rm = scene.renderman_settings
+    maintain_shutter_types(rpass, scene)
+    maintain_world_shaders(rpass, scene)
+    maintain_camera(rpass, scene)
+    maintain_display_drivers(rpass, scene)
+    maintain_output_images(rm, rpass)
+    maintain_hiders(rpass, scene)
+#       create_render_layers(rpass, scene)
+    maintain_searchpaths(rpass, scene)
+    maintain_display_options(rpass, rm)
+    maintain_custom_code(rpass, rm)
+    
+
+def maintain_shutter_types(rpass, scene):
+    fps = scene.render.fps
+    ang = math.degrees(rpass.shutterspeed_ang)
+    sec = rpass.shutterspeed_sec
+    if rpass.shutter_type == "angle":
+        rpass.shutterspeed_sec = (ang/360) * (1/fps)
+    else:
+        rpass.shutterspeed_ang = math.radians(360 * fps * sec)
+        
+def maintain_surface_color(mat):
+    rm = mat.renderman[mat.renderman_index]
+    mat.diffuse_color = rm.color
+    
+def maintain_texture_type(tex):
+    types_dict = {"file" : "IMAGE", "none" : "NONE", "bake" : "NONE"}
+    if hasattr(tex, "renderman"):
+        tex.type = types_dict[tex.renderman.type]
+
+COUNT = 0
+UPDATE = 5
 def maintain(context):
     scene = context.scene
-    pathcoll = scene.renderman_settings.shaders
-    if pathcoll.shaderpaths and not pathcoll.shadercollection:
-        checkshadercollection(scene)
-    
-    maintain_beauty_pass(scene)
-    
-    maintain_lists(scene)
-    maintain_assigned_shaders(context)
-    maintain_rib_structure(scene)    
-
-    passes = scene.renderman_settings.passes
-    for i, rpass in enumerate(passes):
-        maintain_camera(rpass, scene)
-        maintain_display_drivers(rpass, scene)
-#        maintain_options(rpass, scene)
-        maintain_hiders(rpass, scene)
- #       create_render_layers(rpass, scene)
-        maintain_searchpaths(rpass, scene) 
-        i = clear_envmap_passes(i, scene)  
-    
-    for obj in scene.objects:
-        atleast_one_pass(obj, passes)    
-        if obj.type == 'LAMP':
-            atleast_one_pass(obj.data, passes)
-            maintain_shadowmap_passes(obj, scene)
-            maintain_light(obj, scene)       
-
-        else:
-            for ps in obj.particle_systems:
-                atleast_one_pass(ps.settings, passes)
-            for m in obj.material_slots:
-                atleast_one_pass(m.material, passes)
-            update_illuminate_list(obj, scene)
-            maintain_environment_map_passes(obj, scene)
+    global COUNT, UPDATE
+    COUNT += 1
+    if COUNT == UPDATE:
+        COUNT = 0
+        if scene.render.engine == 'RENDERMAN':
+            global RENDER
             
-    check_displaydrivers(scene) 
-    check_display_variables(scene)  
-
-    sort_collection(scene.renderman_settings.hider_list)
-    for hider in scene.renderman_settings.hider_list:
-        sort_collection(hider.options)   
+            sync_BI_dimensions(scene)
+            
+            pathcoll = scene.renderman_settings.shaders
+            if pathcoll.shaderpaths and not pathcoll.shadercollection:
+                checkshadercollection(scene)
+        
+            initial_load_data(scene)
+            
+            maintain_beauty_pass(scene)
+            
+            maintain_lists(scene)
+            maintain_rib_structure(scene)    
+            rm = scene.renderman_settings
+            
+            RENDER = rm.renderexec #pass the render executable to the preview scene
+            
+            passes = rm.passes
+            
+            ##### Render Passes
+            for i, rpass in enumerate(passes):
+                maintain_render_passes(rpass, scene)
+                maintain_client_passes_remove(i, rpass, scene)
+            
+            ##### Objects
+            for obj in scene.objects:
+                atleast_one_pass(obj, passes)
+                maintain_client_passes_add(obj, scene)
+                ##### Lights
+                if obj.type == 'LAMP':
+                    atleast_one_pass(obj.data, passes)
+                    maintain_lamp_shaders(obj, scene)
+                    maintain_light(obj, scene)       
+        
+                else:
+                    ##### Particle Systems
+                    for ps in obj.particle_systems:
+                        atleast_one_pass(ps.settings, passes)
+                    ##### Materials
+                    for m in obj.material_slots:
+                        atleast_one_pass(m.material, passes)
+                        maintain_surface_color(m.material)
+                        maintain_material_shaders(m.material, scene)
+                        for t in m.material.texture_slots:
+                            if hasattr(t, "texture"):
+                                maintain_texture_type(t.texture)
+                    update_illuminate_list(obj, scene)
+                    
+            check_displaydrivers(scene) 
+            check_display_variables(scene)  
+        
+            sort_collection(scene.renderman_settings.hider_list)
+            for hider in scene.renderman_settings.hider_list:
+                sort_collection(hider.options)   
 
 
 def checkextension(file):
     file_array = file.split(".")
     file_array_len = len(file_array)
     file_extension = file_array[file_array_len-1]
-    return file_extension    
+    return file_extension
+
+
+def write_shaderinfo(shader_path, tmp_path, shadinfo):
+    file = open(tmp_path, "w")
+    dbprint("preparing shader", shader_path, lvl=1, grp="shaderinfo")
+    subprocess.Popen([shadinfo, shader_path], stdout=file).communicate()
+    file.close()
+
+
+def get_shaderinfo(shader, shadercollection, scene):
+    tmpdir = tempfile.gettempdir()
+    tmpfilename = shader+".tmp"
+    fulltmpname = os.path.join(tmpdir, tmpfilename)
+    mod_time = shadercollection[shader].mod_time
+    shadinfo = scene.renderman_settings.shaderinfo
+        
+    ###### Binary Shader
+    try:
+        fullshaderpath = shadercollection[shader].fullpath
+    except:
+        fullshaderpath = ""      
+        clear_shader_parameter(shader_parameter)
+        
+    if fullshaderpath:
+        if not os.path.exists(fulltmpname):
+            write_shaderinfo(fullshaderpath, fulltmpname, shadinfo)
+            return fulltmpname
+        else:
+            modtime_new = math.floor(os.path.getmtime(fullshaderpath))
+            if modtime_new != mod_time:
+                write_shaderinfo(fullshaderpath, fulltmpname, shadinfo)
+                scene.renderman_settings.shaders.shadercollection[shader].mod_time = modtime_new
+    return fulltmpname
+
 
 def checkshadercollection(scene):
     shaders = scene.renderman_settings.shaders
@@ -1014,48 +1196,32 @@ def checkshadercollection(scene):
 
 
     for path in shaders.shaderpaths:
-        checked_subdirs = []
         path_name = check_env(path.name)
         if os.path.exists(path_name):
             current_path = path_name
             checksubdir = True
 
-            while checksubdir:
-                addshader(current_path)
-
-                subdir = False
-                for dir in os.listdir(current_path):
-                    fullpath = os.path.join(current_path, dir)
-
-                    if os.path.isdir(fullpath):
-                        if not fullpath in checked_subdirs:
-                            subdir = True
-                            current_path = fullpath
-
-                if not subdir:
-                    checked_subdirs.append(current_path)
-                    if current_path == path_name:
-                        checksubdir = False
-                        break
-                    else:
-                        current_path = path_name
+            addshader(path_name)
 
     
     for item in shaders.shadercollection:
         if item.name == "":
             item.name = os.path.split(item.fullpath)[1].replace('.'+shadbin, '')
 
+def clear_shader_parameter(shader_parameter):
+    for i in range(len(shader_parameter)):
+        shader_parameter.remove(0)
+
 def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scene):
+    var_collection = scene.renderman_settings.var_collection
     global assigned_shaders
-    
-    def clear_shader_parameter(shader_parameter):
-        for i in range(len(shader_parameter)):
-            shader_parameter.remove(0)
             
     def addparameter(parameter, shader_parameter, value):
         parmname = parameter[0]
-        if len(parameter) > 3:
-            parameter.pop(1)
+        for i, p in enumerate(parameter):
+            if p.find("parameter") != -1 or p.find("output") != -1:
+                parameter.pop(i)
+
         type = parameter[1] + " " + parameter[2]
         shader_parameter.add().name = parmname
         ap = shader_parameter[parmname]
@@ -1079,23 +1245,17 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
             ap.float_three[1] = float(value[1])
             ap.float_three[2] = float(value[2])
 
-        elif parameter[2] == "string":
+        elif "string" in parameter:
+            dbprint(parameter, lvl=2, grp="addshaderparameter")
             value = value.replace('"', "")
             value = value.replace(" ", "")
             value = value.replace("\t", "")
             value = value.replace("\n", "")
             ap.textparameter = value
 
-    def write_shaderinfo(shader_path, tmp_path):
-        file = open(tmp_path, "w")
-        subprocess.Popen([shadinfo, shader_path], stdout=file).communicate()
-        file.close()
-        readparms()
-
     def readparms():
         parameters = []
         values = []
-        output_variables = []        
         tmpfile = open(fulltmpname, "r")
         textlines = tmpfile.readlines()
         tmpfile.close()
@@ -1106,6 +1266,7 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
             textlines.pop(0)
         except IndexError:
             assigned_shaders = {}
+            dbprint("assigned_shaders reset at readparms()", lvl=2, grp="assigned_shaders")
             return 0
         [parameters.append(p) for p in textlines if p.find("Default value") == -1]
         parameters = [parameter.replace('\n', '') for parameter in parameters]
@@ -1126,10 +1287,11 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
                         try:
                             pname = parameter.split()[0]
                         except:
-                            print(parameter)
+                            dbprint(parameter, lvl=2, grp="readshaderparameter")
                         if pname == p.name:
                             there = True
                     if not there:
+                        dbprint("removing", shader_parameter[i], lvl=2, grp="removeshaderparameter")
                         shader_parameter.remove(i)
                         removing = True
                 else:
@@ -1140,7 +1302,29 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
                         removing = False
                         i = -1
         
-        for index, parameter in enumerate(parameters):
+        index = 0
+        aovs = 0
+        for p in parameters:
+            if p.find("output") != -1:
+                p = p.split()
+                pname = p.pop(0).replace('"', '')
+                for i, pp in enumerate(p):
+                    if pp.find("output") != -1:
+                        p.pop(i)
+                if not pname in var_collection:
+                    var_collection.add().name = pname
+                aovar = var_collection[pname]
+                type = " ".join(p).replace("parameter", "")
+                dbprint(type, pname, lvl=2, grp="aov")
+                aovar.type_ = type[1:]
+                aovs += 1
+            
+            
+        while True:
+            dbprint(len(parameters)-aovs, len(shader_parameter), index, lvl=2, grp="addshaderparameter")
+            if len(parameters)-aovs <= len(shader_parameter):
+                break
+            parameter = parameters[index]
             try:
                 value = values[index]
             except:
@@ -1150,18 +1334,16 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
             if value.find('[') != -1:
                 value = value[value.find("["):value.find("]")]
                 value = value.replace('[', '')
-            if parameter.find("output") != -1:
-                parmname = parameters.pop(index).split()[0]
-                output_variables.append(parmname)
             
             parm = parameter.split()
-            if not parm[0] in shader_parameter: 
+            dbprint(parm[0], lvl=2, grp="shader")
+            if not parm[0] in shader_parameter and parameter.find("output") == -1:
+                dbprint("adding parameter", parm, shader_parameter, active_pass, lvl=2, grp="addshaderparameter")
                 addparameter(parm, shader_parameter, value)
-        
-        var_collection = scene.renderman_settings.var_collection        
-        for var in output_variables:
-            if not var in var_collection:
-                var_collection.add().name = var                
+            if index == len(parameters)-1:
+                index = 0
+            else:
+                index += 1
         
         parmnames = []
         [parmnames.append(parm.split()[0]) for parm in parameters]
@@ -1172,39 +1354,38 @@ def checkshaderparameter(identifier, active_pass, shader, shader_parameter, scen
                 
     def check_curr_shader(current_shader):
         if not active_pass.name in current_shader or current_shader[active_pass.name] != shader:
+            dbprint("not pass", not active_pass.name in current_shader)
+            dbprint("reading03", "shaders of curr. id:",current_shader, "pass:",active_pass, "id:",identifier, lvl=2, grp="checkshaderparameter")
             readparms()
             current_shader[active_pass.name] = shader
         return current_shader
 
     shadercollection = scene.renderman_settings.shaders.shadercollection
-    if not shader or not shadercollection:
+    if not shader in shadercollection:
         clear_shader_parameter(shader_parameter)
-        return 0
-    
-    shadinfo = scene.renderman_settings.shaderinfo
+        return
     
     tmpdir = tempfile.gettempdir()
     tmpfilename = shader+".tmp"
     fulltmpname = os.path.join(tmpdir, tmpfilename)
-    mod_time = shadercollection[shader].mod_time       
+    mod_time = shadercollection[shader].tmp_mod_time 
         
-    ###### Binary Shader
-    try:
-        fullshaderpath = shadercollection[shader].fullpath
-    except:
-        fullshaderpath = ""      
-        clear_shader_parameter(shader_parameter)
-        
-    if fullshaderpath:
+    if fulltmpname:
         if not os.path.exists(fulltmpname):
-            write_shaderinfo(fullshaderpath, fulltmpname)
+            get_shaderinfo(shader, shadercollection, scene)
+            dbprint("reading01", lvl=2, grp="shaderinfo")
+            readparms()
         else:
-            modtime_new = math.floor(os.path.getmtime(fullshaderpath))
-            scene.renderman_settings.shaders.shadercollection[shader].mod_time = modtime_new
+            modtime_new = math.floor(os.path.getmtime(fulltmpname))
+            dbprint(assigned_shaders, lvl=2, grp="assigned_shaders")
             if modtime_new != mod_time:
-                write_shaderinfo(fullshaderpath, fulltmpname)
+                get_shaderinfo(shader, shadercollection, scene)
+                dbprint("reading02", modtime_new, "!=", mod_time, "of", shader, "at", identifier, ",", active_pass, lvl=2, grp="shaderinfo")
+                readparms()
+                scene.renderman_settings.shaders.shadercollection[shader].tmp_mod_time = modtime_new
                 
             if not identifier in assigned_shaders or assigned_shaders[identifier] != check_curr_shader(assigned_shaders[identifier]):
+                dbprint("check_curr_shader() for", identifier, lvl=2, grp="checkshaderparameter")
                 cs = check_curr_shader({})
                 assigned_shaders[identifier] = cs
                 

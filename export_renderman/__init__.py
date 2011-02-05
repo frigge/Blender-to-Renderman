@@ -33,11 +33,11 @@
 ##################################################################################################################################
 
 
-bl_addon_info = {
+bl_info = {
     'name': 'Renderman',
     'author': 'Sascha Fricke',
     'version': '0.01',
-    'blender': (2, 5, 5),
+    'blender': (2, 5, 6),
     'location': 'Info Header',
     'description': 'Connects Blender to Renderman Interface',
     'category': 'Render'}
@@ -58,6 +58,7 @@ else:
     import export_renderman.ui
     from export_renderman.ui import *
     import export_renderman.export
+    from export_renderman.export import *
 
 import bpy
 import properties_render
@@ -103,7 +104,7 @@ for member in dir(properties_texture):
 
 for member in dir(properties_particle):
     subclass = getattr(properties_particle, member)
-    exceptions = ['Render']
+    exceptions = ['Render', 'Children']
     try:
         if not subclass.bl_label in exceptions:
             subclass.COMPAT_ENGINES.add('RENDERMAN')
@@ -186,7 +187,7 @@ class Renderman_OT_Render(bpy.types.Operator):
                 scene.frame_set(i)
                 render(scene)
         else:
-            render(context)
+            render(scene)
         return{'FINISHED'}   
 
 def image(name, scene): return name.replace("[frame]", framepadding(scene))
@@ -208,12 +209,7 @@ def start_render(render, ribfile, current_pass, scene):
 #                except:
 #                    renderprocess.kill()
 #    else:
-    try:
-        print("Render .. "+current_pass.name)
-        print(render + ' ' + ribfile)
-        os.system(render+" "+ribfile)
-    except:
-        pass           
+    renderprocess = subprocess.Popen([render, ribfile])      
                  
     #wait for the file to be completely written
     for disp in current_pass.displaydrivers:
@@ -231,256 +227,240 @@ def start_render(render, ribfile, current_pass, scene):
             if not img in bpy.data.images and not disp.displaydriver == "framebuffer":
                 bpy.data.images.load(img) 
        
-def render(context):
-    scene = context.scene
+def render(scene):
     rndr = scene.renderman_settings.renderexec
     rm = scene.renderman_settings
     rs = rm.rib_structure    
     if rndr != "":
-        maintain(context)
+        maintain(eval("bpy.context"))
         path = getdefaultribpath(scene)
                                              
         active_pass = getactivepass(scene)
 
         global exported_instances
-
-
+        pname = getname(rs.frame.filename,
+                        scene=scene,
+                        frame=framepadding(scene))+'.rib'
+        
+        filepath = os.path.join(path, pname)
+                
         if scene.renderman_settings.exportallpasses:
+            global base_archive
+            base_archive = Archive(data_path=scene, type="Frame", scene=scene, filepath=filepath)
             for item in scene.renderman_settings.passes:
-                imagefolder = os.path.join(path, item.imagedir)
-                checkForPath(imagefolder)            
-                name = getname( rs.render_pass.filename,
-                                pass_name = item.name,
-                                sce = scene)+'.rib'
-                rib = os.path.join(path, name)
-
-                if item.displaydrivers:
-                    image = item.displaydrivers[0].file   
-                elif preview_scene and not item.displaydrivers:
-                    adddisp(item)    
-                    image = item.displaydrivers[0].file                                 
+                imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
+                checkForPath(imagefolder)                                       
 
                 exported_instances = []
 
-                export.export(rib, item, scene)
-
-                if not scene.renderman_settings.exportonly:
-                    if rndr != "" and not item.environment:                            
-                        start_render(rndr, rib, item, scene)                    
+                export(item, scene)
+            close_all()
+            if not scene.renderman_settings.exportonly:
+                if rndr != "" and not item.environment:
+                    start_render(rndr, base_archive.filepath, item, scene)
+                    check_disps_processing(item, scene)
         else:
 
             exported_instances = []
 
 
-            export.export(active_pass, path, scene)
+            export(active_pass, scene)
+            close_all()
             imagefolder = os.path.join(path, active_pass.imagedir)
             checkpaths(imagefolder)
-            ribfilename = active_pass.name+framepadding(scene)+".rib"
-            rib = os.path.join(path, ribfilename)
             if not scene.renderman_settings.exportonly:
                if rndr != "":
-                   start_render(rndr, rib, active_pass, scene)       
+                   start_render(rndr, base_archive.filepath, active_pass, scene)
+                   check_disps_processing(active_pass, scene)
        
-       
+update_counter = 0
 class RendermanRender(bpy.types.RenderEngine):
     bl_idname = 'RENDERMAN'
     bl_label = "Renderman"
-#    bl_use_preview = True
-    delay = 0.02
+    bl_use_preview = True
+    update = 50
     
+    def rm_start_render(self, render, ribfile, current_pass, scene):
+        rc = current_pass.renderman_camera
+        x = int(rc.resx * rc.respercentage)*0.01
+        y = int(rc.resy * rc.respercentage)*0.01
+        
+        self.update_stats("", "Render ... "+current_pass.name)
+    
+        if current_pass.displaydrivers:
+            print("Render .. "+current_pass.name)
+            print(render + ' ' + ribfile)
+            
+            renderprocess = subprocess.Popen([render, ribfile])
+           
+            def image(name): return name.replace("[frame]", framepadding(scene))    
+
+            def update_image(image):
+                result = self.begin_result(0, 0, x, y)
+              
+                layer = result.layers[0]
+                
+                try:
+                    layer.load_from_file(image)
+                except:
+                    print("can't load image")
+                self.end_result(result)
+
+            if (current_pass.renderresult != ""
+                and current_pass.displaydrivers[current_pass.renderresult].displaydriver != "framebuffer"):
+                img = image(current_pass.displaydrivers[current_pass.renderresult].file)
+                
+                while not os.path.exists(img):
+                    if os.path.exists(img):
+                        break                 
+                   
+                    if self.test_break():
+                        try:
+                            renderprocess.terminate()
+                        except:
+                            renderprocess.kill()
+            
+                    if renderprocess.poll() == 0:
+                        self.update_stats("", "Error: Check Console")
+                        break            
+                                      
+                prev_size = -1
+                ready = False
+               
+                dbprint("all image files created, now load them", lvl=2, grp="renderprocess")
+                dbprint("renderprocess finished?", renderprocess.poll(), lvl=2, grp="renderprocess")
+                while True:
+                    dbprint("Rendering ...", lvl=2, grp="renderprocess")
+                    update_image(img)
+#                            if renderprocess.poll():
+#                                print("Finished")
+#                                self.update_stats("", "Finished")
+#                                update_image(layname, image)
+#                                break
+    
+                    if self.test_break():
+                        dbprint("aborting rendering", lvl=2, grp="renderprocess")
+                        try:
+                            renderprocess.terminate()
+                        except:
+                            renderprocess.kill()
+                        break
+              
+                    if renderprocess.poll() == 0:
+                        dbprint("renderprocess terminated", lvl=2, grp="renderprocess")
+                        break
+              
+                    if os.path.getsize(img) != prev_size:
+                        prev_size = os.path.getsize(img) 
+                        update_image(img)                                                               
+                            
+            ## until the render api is fixed, load all images manually in the image editor
+            try:
+                for disp in current_pass.displaydrivers:
+                    img = image(disp.file)
+                    if not disp.displaydriver == "framebuffer":
+                        if not img in bpy.data.images:
+                            bpy.data.images.load(image(img))
+                        else: bpy.data.images[img].update()
+            except SystemError:
+                pass
 
     def render(self, scene):
-#        global current_scene
-#        global preview_scene
-        for i, r in enumerate(scene.renderman_settings.passes):
-            if r.name == 'Beauty':
-                scene.renderman_settings.passes_index = i
-        render(self, scene)
-#        if scene.name == "preview":
-#            preview_scene = True
-#            rndr = current_scene.renderman_settings.renderexec 
-#        else:    
-#            preview_scene = False        
-#            rndr = scene.renderman_settings.renderexec
-#        if rndr != "":
-#            maintain()
-#            path = getdefaultribpath(scene)
-#            
-#
-#
-#    
-#            def start_render(self, render, ribfile, current_pass):
-#                r = scene.render
-#                x = int(r.resolution_x * r.resolution_percentage * 0.01)
-#                y = int(r.resolution_y * r.resolution_percentage * 0.01)
-#                
-#                self.update_stats("", "Render ... "+current_pass.name)
-#            
-#                if current_pass.displaydrivers and not current_pass.shadow:
-#                    print("Render .. "+current_pass.name)
-#                    print(render + ' ' + ribfile)
-#                    
-#                    renderprocess = subprocess.Popen([render, ribfile])
-#                   
-#                    def image(name): return name.replace("[frame]", framepadding(scene))    
-#    
-#                    def update_image(image):
-#                        result = self.begin_result(0, 0, x, y)
-#                      
-#                        layer = result.layers[0]
-#    
-#                        try:
-#                            layer.load_from_file(image)
-#                            loaded = True
-#                            print(name+" loaded "+printmessage)
-#                        except:
-#                            loaded = False
-#                        self.end_result(result)
-#                        return loaded
-#                    if current_pass.displaydrivers[current_pass.renderresult].displaydriver != "framebuffer":
-#                        img = image(current_pass.displaydrivers[current_pass.renderresult].file)
-#                        
-#                        while not os.path.exists(img):
-#                            if os.path.exists(img):
-#                                break                 
-#                           
-#                            if self.test_break():
-#                                try:
-#                                    renderprocess.terminate()
-#                                except:
-#                                    renderprocess.kill()
-#                    
-#                            if renderprocess.poll():
-#                                self.update_stats("", "Error: Check Console")
-#                                break
-#    
-#                            time.sleep(self.delay)              
-#                                              
-#                        prev_size = -1
-#                        ready = False
-#                       
-#                        print("all image files created, now load them")
-#                        while not ready:                 
-#                            update_image(img)
-#    #                            if renderprocess.poll():
-#    #                                print("Finished")
-#    #                                self.update_stats("", "Finished")
-#    #                                update_image(layname, image)
-#    #                                break
-#            
-#                            if self.test_break():
-#                                try:
-#                                    renderprocess.terminate()
-#                                except:
-#                                    renderprocess.kill()
-#                                break
-#                      
-#                            try:
-#                                if os.path.getsize(img) != prev_size:
-#                                    prev_size = os.path.getsize(img) 
-#                                    update_image(img)                                  
-#                                else:
-#                                    update_image(img)
-#                                    ready = True
-#                                    self.update_stats("", "Finished")
-#                                    break
-#                            except:
-#                                pass                                   
-#                            
-#                            time.sleep(self.delay)                                          
-#                  
-#                    
-#                    else:
-#                        try:
-#                            print("render " +ribfile)
-#                            os.system(render+" "+ribfile)
-#                        except:
-#                            pass                    
-#            
-#                ## until the render api is fixed, load all images manually in the image editor
-#                for disp in current_pass.displaydrivers:
-#                    img = image(disp.file)
-#                    if not img in bpy.data.images and not disp.displaydriver == "framebuffer":
-#                        bpy.data.images.load(image(disp.file))
-#                    else: bpy.data.images[img].update()                        
-#            
-#            self.update_stats("", "generating Folder structure")
-#            checkpaths(path)
-#            checkpaths(os.path.join(path, scene.renderman_settings.polydir))
-#            checkpaths(os.path.join(path, scene.renderman_settings.shadowdir))
-#            checkpaths(os.path.join(path, scene.renderman_settings.envdir))
-#            checkpaths(os.path.join(path, scene.renderman_settings.texdir))
-#    
-#            if preview_scene:
-#                scene.renderman_settings.facevertex = False
-#                if not scene.renderman_settings.passes:
-#                    scene.renderman_settings.passes.add().name = "preview"
-#                if not scene.renderman_settings.passes["preview"].displaydrivers:
-#                    adddisp(scene.renderman_settings.passes['preview'])
-#                active_pass = scene.renderman_settings.passes["preview"]
-#                maintain_display_drivers(active_pass, scene)
-#            else:            
-#                active_pass = getactivepass(scene)
-#
-#
-#    
-#            name = active_pass.name+framepadding(scene)
-#    
-#    
-#            if scene.renderman_settings.exportallpasses:
-#                for item in scene.renderman_settings.passes:
-#                    imagefolder = os.path.join(path, item.imagedir)
-#                    checkpaths(imagefolder)
-#                for item in scene.renderman_settings.passes:
-#                    ribfilename = item.name+framepadding(scene)+".rib"
-#                    rib = os.path.join(path, ribfilename)
-#    
-#                    if item.displaydrivers:
-#                        image = item.displaydrivers[0].file   
-#                    elif preview_scene and not item.displaydrivers:
-#                        adddisp(item)    
-#                        image = item.displaydrivers[0].file                                 
-#                    self.update_stats("", "export scene data to RenderMan Interface Bytestream")
-#    
-#    
-#                    writedata(scene, item, path)
-#                    if item.environment:
-#                        exported_env_directions += 1
-#                        print("env "+str(exported_env_directions))
-#                    if not scene.renderman_settings.exportonly:
-#    #                    ready = False
-#    #                    prev_size = -1
-#    #                    while not ready:
-#    #                        if self.test_break():
-#    #                            try:
-#    #                                break
-#    #                            except:
-#    #                                break
-#    #
-#    #                        if os.path.exists(rib):
-#    #                            size = os.path.getsize(rib)
-#    #                            print("rib size "+str(size))
-#    #                            if size == prev_size:
-#    #                                ready = True
-#    #                                break
-#    #                            
-#    #                            prev_size = size
-#                        if rndr != "":                            
-#                            start_render(self, rndr, rib, item)
-#                        
-#    
-#            else:
-#                self.update_stats("", "export scene data to RenderMan Interface Bytestream")
-#    
-#                writedata(scene, active_pass, path, frame)
-#                imagefolder = os.path.join(path, active_pass.imagedir)
-#                checkpaths(imagefolder)
-#                image = os.path.join(imagefolder, imagename)
-#                ribfilename = active_pass.name+framepadding(scene)+".rib"
-#                rib = os.path.join(path, ribfilename)
-#                if not scene.renderman_settings.exportonly:
-#                   if rndr != "":
-#                       start_render(self, rndr, rib, active_pass)
+        rm = scene.renderman_settings
+        rs = rm.rib_structure
+        if scene.name == "preview":
+            global update_counter
+            update_counter += 1
+            if update_counter < self.update:
+                return
+            update_counter = 0
+            mat, rndr = preview_mat()
+            matrm = mat.renderman[mat.renderman_index]
+
+            rmprdir = bpy.utils.preset_paths("renderman")[0]
+            mat_preview_path = os.path.join(rmprdir, "material_previews")
+            if matrm.preview_scene == "":
+                return
+            previewdir = os.path.join(mat_preview_path, matrm.preview_scene)
+            previewdir_materialdir = os.path.join(previewdir, "Materials")
+            mat_archive_file = os.path.join(previewdir_materialdir, "preview_material.rib")
+            mat_archive = Archive(data_path=mat, filepath=mat_archive_file, scene=scene)
+            print(mat.name)
+            writeMaterial(mat, mat_archive=mat_archive, active_matpass=True)
+            ribfile = os.path.join(previewdir, "material_preview.rib")
+            renderprocess = subprocess.Popen([rndr, ribfile])  
+
+            def update_image(image):
+                result = self.begin_result(0, 0, 128, 128)
+              
+                layer = result.layers[0]
+                try:
+                    layer.load_from_file(image)
+                    loaded = True
+                except SystemError:
+                    loaded = False
+                self.end_result(result)
+                return loaded
+
+            img = os.path.join(previewdir, "material_preview.tiff")
+            
+            while not os.path.exists(img):
+                if os.path.exists(img):
+                    break                 
+        
+                if renderprocess.poll() == 0:
+                    break            
+
+            while not renderprocess.poll() == 0:
+                update_image(img)
+            update_image(img)
+
+            
+        else:        
+            rndr = scene.renderman_settings.renderexec
+            if rndr == "":
+                return
+            
+            path = getdefaultribpath(scene)
+            pname = getname(rs.frame.filename,
+                            scene=scene,
+                            frame=framepadding(scene))+'.rib'
+            
+            filepath = os.path.join(path, pname)
+                    
+            rndr = scene.renderman_settings.renderexec
+
+                                                 
+            active_pass = getactivepass(scene)
+    
+            global exported_instances, base_archive
+            base_archive = Archive(data_path=scene, type="Frame", scene=scene, filepath=filepath)
+    
+            if scene.renderman_settings.exportallpasses:
+                for item in scene.renderman_settings.passes:
+                    imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
+                    checkForPath(imagefolder)                                       
+    
+                    exported_instances = []
+    
+                    export(item, scene)
+                close_all()
+                if not scene.renderman_settings.exportonly:
+                    if rndr != "":
+                        self.rm_start_render(rndr, base_archive.filepath, item, scene)
+                        check_disps_processing(item, scene)
+            else:
+                exported_instances = []
+    
+    
+                export(active_pass, scene)
+                close_all()
+                imagefolder = os.path.join(path, active_pass.imagedir)
+                checkpaths(imagefolder)
+                if not scene.renderman_settings.exportonly:
+                   if rndr != "":
+                       self.rm_start_render(rndr, base_archive.filepath, active_pass, scene)
+                       check_disps_processing(active_pass, scene)
 
 ##################################################################################################################################
 
