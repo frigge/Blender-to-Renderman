@@ -1,0 +1,140 @@
+#ImageFolder
+imagedir = "textures"
+##
+
+##Quality
+pixelsamples_x = 2
+pixelsamples_y = 2
+pixelfilter.filterlist = "box"
+pixelfilter.filterheight = 1.0
+pixelfilter.filterwidth = 1.0
+pixelfilter.customfilter = ""
+##
+
+##Motion Blur
+motionblur = False
+shutterspeed_sec = 0.00999999977648
+shutterspeed_ang = 1.50796449184
+##
+
+##Export Objects
+exportobjects = True
+objectgroup = ""
+##
+
+##Export Lights
+exportlights = True
+lightgroup = ""
+##
+
+##Animate Pass
+exportanimation = True
+##
+
+##Options
+searchpath 1
+searchpath texture "/tmp/Scene/textures:/tmp/Scene/images" 1
+searchpath shader "/home/frigge/PixieRenderman/shaders:/home/frigge/mydocuments/renderman shaders/:@:&" 1
+##
+
+##Hider
+hidden
+hidden depthfilter "midpoint" 1
+hidden jitter 0.0 1
+hidden samplemotion 0 1
+##
+
+##Displays
+NewDisplay Default01
+displaydrivers["Default01"].name = "Default01"
+displaydrivers["Default01"].displaydriver = "file"
+displaydrivers["Default01"].default_name = True
+displaydrivers["Default01"].file = "/tmp/Scene/textures/Default01_envmap_rgb_[dir]_[frame].file"
+displaydrivers["Default01"].filename = "Default01_envmap_rgb_[dir]_[frame].file"
+displaydrivers["Default01"].raw_name = "[name]_[pass]_[var]_[dir]_[frame].[driver]"
+displaydrivers["Default01"].gain = 1.0
+displaydrivers["Default01"].gamma = 1.0
+displaydrivers["Default01"].quantize_presets = "16bit"
+displaydrivers["Default01"].quantize_black = 0
+displaydrivers["Default01"].quantize_white = 65535
+displaydrivers["Default01"].quantize_min = 0
+displaydrivers["Default01"].quantize_max = 65535
+displaydrivers["Default01"].send = False
+displaydrivers["Default01"].var = "rgb"
+displaydrivers["Default01"].processing.process = True
+displaydrivers["Default01"].processing.output = "Default01_envmap_rgb_[dir]_[frame].tx"
+displaydrivers["Default01"].processing.default_output = True
+displaydrivers["Default01"].processing.filter = "box"
+displaydrivers["Default01"].processing.custom_filter = ""
+displaydrivers["Default01"].processing.width = 1.0
+displaydrivers["Default01"].processing.swidth = 1.0
+displaydrivers["Default01"].processing.twidth = 1.0
+displaydrivers["Default01"].processing.stwidth = False
+displaydrivers["Default01"].processing.blur = 1.0
+displaydrivers["Default01"].processing.envcube = True
+displaydrivers["Default01"].processing.fov = 1.57079637051
+displaydrivers["Default01"].processing.shadow = False
+displaydrivers["Default01"].processing.custom_parameter = ""
+#Custom Options
+##
+
+##Custom Scene RIB Code
+##
+
+##Custom World RIB Code
+##
+
+##Attributes
+##
+
+##World Shaders
+imager_shader = ""
+global_shader.surface_shader = "matte"
+global_shader.atmosphere_shader = ""
+##
+
+##Surface
+global_shader.surface_shader_parameter["Ka"].textparameter = ""
+global_shader.surface_shader_parameter["Ka"].vector_size = 1
+global_shader.surface_shader_parameter["Ka"].parametertype = "float"
+global_shader.surface_shader_parameter["Ka"].float_one[0] = 1.0
+global_shader.surface_shader_parameter["Ka"].float_two[0] = 0.0
+global_shader.surface_shader_parameter["Ka"].float_two[1] = 0.0
+global_shader.surface_shader_parameter["Ka"].float_three[0] = 0.0
+global_shader.surface_shader_parameter["Ka"].float_three[1] = 0.0
+global_shader.surface_shader_parameter["Ka"].float_three[2] = 0.0
+global_shader.surface_shader_parameter["Ka"].int_one[0] = 0
+global_shader.surface_shader_parameter["Ka"].int_two[0] = 0
+global_shader.surface_shader_parameter["Ka"].int_two[1] = 0
+global_shader.surface_shader_parameter["Ka"].int_three[0] = 0
+global_shader.surface_shader_parameter["Ka"].int_three[1] = 0
+global_shader.surface_shader_parameter["Ka"].int_three[2] = 0
+global_shader.surface_shader_parameter["Ka"].input_type = "string"
+global_shader.surface_shader_parameter["Ka"].colorparameter[0] = 0.0
+global_shader.surface_shader_parameter["Ka"].colorparameter[1] = 0.0
+global_shader.surface_shader_parameter["Ka"].colorparameter[2] = 0.0
+##
+
+global_shader.surface_shader_parameter["Kd"].textparameter = ""
+global_shader.surface_shader_parameter["Kd"].vector_size = 1
+global_shader.surface_shader_parameter["Kd"].parametertype = "float"
+global_shader.surface_shader_parameter["Kd"].float_one[0] = 1.0
+global_shader.surface_shader_parameter["Kd"].float_two[0] = 0.0
+global_shader.surface_shader_parameter["Kd"].float_two[1] = 0.0
+global_shader.surface_shader_parameter["Kd"].float_three[0] = 0.0
+global_shader.surface_shader_parameter["Kd"].float_three[1] = 0.0
+global_shader.surface_shader_parameter["Kd"].float_three[2] = 0.0
+global_shader.surface_shader_parameter["Kd"].int_one[0] = 0
+global_shader.surface_shader_parameter["Kd"].int_two[0] = 0
+global_shader.surface_shader_parameter["Kd"].int_two[1] = 0
+global_shader.surface_shader_parameter["Kd"].int_three[0] = 0
+global_shader.surface_shader_parameter["Kd"].int_three[1] = 0
+global_shader.surface_shader_parameter["Kd"].int_three[2] = 0
+global_shader.surface_shader_parameter["Kd"].input_type = "string"
+global_shader.surface_shader_parameter["Kd"].colorparameter[0] = 0.0
+global_shader.surface_shader_parameter["Kd"].colorparameter[1] = 0.0
+global_shader.surface_shader_parameter["Kd"].colorparameter[2] = 0.0
+##
+
+##
+

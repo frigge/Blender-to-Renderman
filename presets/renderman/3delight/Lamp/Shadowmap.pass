@@ -1,0 +1,100 @@
+#ImageFolder
+imagedir = "shadowmaps"
+##
+
+##Quality
+pixelsamples_x = 1
+pixelsamples_y = 1
+pixelfilter.filterlist = "box"
+pixelfilter.filterheight = 1.0
+pixelfilter.filterwidth = 1.0
+pixelfilter.customfilter = ""
+##
+
+##Motion Blur
+motionblur = False
+shutterspeed_sec = 0.00999999977648
+shutterspeed_ang = 1.50796449184
+##
+
+##Export Objects
+exportobjects = True
+objectgroup = ""
+##
+
+##Export Lights
+exportlights = False
+lightgroup = ""
+##
+
+##Animate Pass
+exportanimation = True
+##
+
+##Options
+searchpath 1
+searchpath texture "/tmp/Scene/textures:/tmp/Scene/images:/tmp/Scene/shadowmaps" 1
+searchpath shader "/home/frigge/3delight-9.0.0/Linux-x86_64/shaders:@:&" 1
+##
+
+##Hider
+hidden
+hidden depthfilter "midpoint" 0
+hidden extrememotiondof 0 0
+hidden jitter 0 0
+hidden maxvdepth 0 0
+hidden midpointratio 0.0 0
+hidden samplemotion 0 0
+##
+
+##Displays
+NewDisplay Default01
+displaydrivers["Default01"].name = "Default01"
+displaydrivers["Default01"].displaydriver = "dsm"
+displaydrivers["Default01"].default_name = True
+displaydrivers["Default01"].file = "/tmp/Scene/shadowmaps/Default01_Lamp_shadowname_Default01_rgba[frame].dsm"
+displaydrivers["Default01"].filename = "Default01_Lamp_shadowname_Default01_rgba[frame].dsm"
+displaydrivers["Default01"].raw_name = "[name]_[pass]_[var][frame].[driver]"
+displaydrivers["Default01"].gain = 1.0
+displaydrivers["Default01"].gamma = 1.0
+displaydrivers["Default01"].quantize_presets = "16bit"
+displaydrivers["Default01"].quantize_black = 0
+displaydrivers["Default01"].quantize_white = 65535
+displaydrivers["Default01"].quantize_min = 0
+displaydrivers["Default01"].quantize_max = 65535
+displaydrivers["Default01"].send = False
+displaydrivers["Default01"].var = "rgba"
+displaydrivers["Default01"].processing.process = False
+displaydrivers["Default01"].processing.output = "Default01_Lamp_shadowname_Default01_rgba[frame].tx"
+displaydrivers["Default01"].processing.default_output = True
+displaydrivers["Default01"].processing.filter = "box"
+displaydrivers["Default01"].processing.custom_filter = ""
+displaydrivers["Default01"].processing.width = 1.0
+displaydrivers["Default01"].processing.swidth = 1.0
+displaydrivers["Default01"].processing.twidth = 1.0
+displaydrivers["Default01"].processing.stwidth = False
+displaydrivers["Default01"].processing.blur = 1.0
+displaydrivers["Default01"].processing.envcube = False
+displaydrivers["Default01"].processing.fov = 1.57079637051
+displaydrivers["Default01"].processing.shadow = False
+displaydrivers["Default01"].processing.custom_parameter = ""
+#Custom Options
+##
+
+##Custom Scene RIB Code
+##
+
+##Custom World RIB Code
+##
+
+##Attributes
+##
+
+##World Shaders
+imager_shader = ""
+global_shader.surface_shader = ""
+global_shader.atmosphere_shader = ""
+##
+
+##
+

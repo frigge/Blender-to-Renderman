@@ -1,0 +1,28 @@
+Display "/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/images/material_preview.tiff" "tiff" "rgb" "int[4] quantize" [0 255 0 255] "float[2] exposure" [1.0 1.0]
+Format 128 128 1.0
+ScreenWindow -1.0 1.0 -1.0 1.0
+Clipping 1.0 30.0
+PixelFilter "box" 1.0 1.0
+PixelSamples 1 1
+Option 
+	"searchpath" 
+		"string texture" ["/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/textures:/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/images"]
+		"string shader" ["/home/frigge/3delight-9.0.0/Linux-x86_64/shaders:@:&"]
+
+Hider "hidden"
+		"string depthfilter" [""]
+		"int extrememotiondof" [0]
+		"int jitter" [0]
+		"int maxvdepth" [0]
+		"float midpointratio" [0.0]
+		"int samplemotion" [0]
+
+Orientation "lh"
+Projection "perspective" "fov" [49.1343420776]
+Scale 1 1 -1
+Rotate -63.5592952084 1 0 0
+Rotate -0.619767950192 0 1 0
+Rotate -46.6919449776 0 0 1
+Translate -1.65245211124 1.48810315132 -1.11390626431
+
+

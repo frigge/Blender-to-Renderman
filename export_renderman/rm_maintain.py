@@ -707,6 +707,10 @@ def maintain_camera(rpass, scene):
         rpass.camera_object = scene.camera.name
     rd = scene.render
     rc = rpass.renderman_camera
+    camobj = scene.objects[rpass.camera_object]
+    if camobj.type == "CAMERA":
+        rc.near_clipping = camobj.data.clip_start
+        rc.far_clipping = camobj.data.clip_end 
     if rc.square:
         rc.resy = rc.resx
     

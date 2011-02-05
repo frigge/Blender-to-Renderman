@@ -1,0 +1,5 @@
+Color [1.0 1.0 1.0]
+Opacity [1.0 1.0 1.0]
+Surface "matte" 
+	"uniform float Ka" [1.0] 
+	"uniform float Kd" [1.0] 

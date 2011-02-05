@@ -1,0 +1,13 @@
+##Sphere
+AttributeBegin
+Attribute "identifier" "name" ["Sphere"]
+ConcatTransform [	 1.0 0.0 0.0 0.0
+					 0.0 1.0 0.0 0.0
+					 0.0 0.0 1.0 0.0
+					 0.0 0.0 0.0 1.0]
+ReadArchive "/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/Materials/Material.001_Beauty0001.rib"
+Sides 2
+ShadingRate 1.0
+ReadArchive "/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/Meshes/Sphere0001.rib"
+AttributeEnd
+

@@ -1,0 +1,14 @@
+WorldBegin
+
+
+Surface "matte" 
+	"uniform float Ka" [1.0] 
+	"uniform float Kd" [1.0] 
+ReadArchive "/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/Lights/Lamp.001_Beauty0001.rib"
+ReadArchive "/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/Lights/Lamp_Beauty0001.rib"
+
+Illuminate "Lamp.001" 1
+Illuminate "Lamp" 1
+
+ReadArchive "/home/frigge/mydocuments/scripts/presets/renderman/material_previews/Sphere/Objects/Sphere_Beauty0001.rib"
+WorldEnd

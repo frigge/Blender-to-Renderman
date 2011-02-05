@@ -1,0 +1,12 @@
+
+AttributeBegin
+ConcatTransform [	 -0.290864646435 0.95517116785 -0.0551890581846 0.0
+					 -0.771100819111 -0.19988335669 0.604524731636 0.0
+					 0.566393196583 0.21839119494 0.794672250748 0.0
+					 1.87852239609 -5.71319770813 1.10735607147 1.0]
+LightSource "pointlight" "Lamp.001" 
+	"uniform float decay" [2.0] 
+	"uniform point from" [0.0 0.0 0.0] 
+	"uniform float intensity" [1.00000119209] 
+	"uniform color lightcolor" [1.0 1.0 1.0] 
+AttributeEnd

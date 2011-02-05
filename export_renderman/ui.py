@@ -460,8 +460,6 @@ def attribute_menu(name, path="", selected=False): ### create the attribute Menu
 def dimensions_layout(layout, rc, scene, env=False):
     col = layout.column(align = True)
     row = col.row(align = True)
-    if env:
-        row.prop(rc, "fov")
     row.prop(rc, "square")
     row.prop(rc, "resx")
     row.prop(rc, "resy")
@@ -474,8 +472,11 @@ def dimensions_layout(layout, rc, scene, env=False):
     row.prop(rc, "shift_x")
     row.prop(rc, "shift_y")
     row = col.row(align = True)
-    row.prop(rc, "near_clipping", text="Near")
-    row.prop(rc, "far_clipping", text="Far")
+    if scene.objects[getactivepass(scene).camera_object].type != "CAMERA":
+        row.prop(rc, "near_clipping", text="Near")
+        row.prop(rc, "far_clipping", text="Far")
+        row=col.row(align=True)
+        row.prop(rc, "fov")
 
 
 def passes_preset_sub_menu(mname, prdir, client="", parm_path=""):
