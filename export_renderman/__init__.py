@@ -436,9 +436,10 @@ class RendermanRender(bpy.types.RenderEngine):
     
             if scene.renderman_settings.exportallpasses:
                 for item in scene.renderman_settings.passes:
-                    imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
-                    checkForPath(imagefolder)
-                    export(item, scene)
+                    if item.export:
+                        imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
+                        checkForPath(imagefolder)
+                        export(item, scene)
                 close_all()
                 if not scene.renderman_settings.exportonly:
                     if rndr != "":

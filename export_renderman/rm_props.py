@@ -408,6 +408,8 @@ Collection.type = bpy.props.StringProperty()
 #                                           #
 #############################################
 
+passes.export = bpy.props.BoolProperty(name="Export", description="Export this Render Pass", default=True)
+
 passes.client = bpy.props.StringProperty()
 
 passes.requested = bpy.props.BoolProperty(default = False)

@@ -1317,6 +1317,7 @@ class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
         row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")
         if renderman_settings.passes:
             row.prop(active_pass, "name", text="")
+            row.prop(active_pass, "export", text="")
         
         
 class Renderman_PT_PassCamera(bpy.types.Panel, RenderButtonsPanel):
