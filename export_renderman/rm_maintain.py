@@ -117,12 +117,7 @@ def getactivepass(scene):
     rm = scene.renderman_settings
     passes = rm.passes
     active_pass = None
-    if rm.passes_index >= len(rm.passes) or rm.passes_index == -1:
-        bpy.ops.renderman.set_pass_index()
-    try:
-        active_pass = passes[rm.passes_index]
-    except IndexError:
-        pass
+    active_pass = passes[rm.passes_index]
     return active_pass
     
     

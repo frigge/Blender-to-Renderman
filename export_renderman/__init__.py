@@ -168,6 +168,16 @@ def checksize(img):
         time.sleep(1)
     return 0
 
+def rm_shellscript(cmd, rm):
+    if rm.shellscript_create:
+        ssfile = rm.shellscript_file
+    if not rm.shellscript_append or not os.path.exists(ssfile):
+        file = open(ssfile, "w")
+    elif rm.shellscript_append and os.path.exists(ssfile):
+        file = open(ssfile, "a")
+    file.write(cmd+'\n')
+    file.close()
+
 class Renderman_OT_Render(bpy.types.Operator):
     bl_label = "Render"
     bl_idname = "renderman.render"
@@ -246,17 +256,23 @@ def render(scene):
             global base_archive
             base_archive = Archive(data_path=scene, type="Frame", scene=scene, filepath=filepath)
             for item in scene.renderman_settings.passes:
-                imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
-                checkForPath(imagefolder)                                       
+                if item.export:
+                    imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
+                    checkForPath(imagefolder)                                       
 
-                exported_instances = []
+                    exported_instances = []
 
-                export(item, scene)
+                    export(item, scene)
             close_all()
-            if not scene.renderman_settings.exportonly:
+            rm = scene.renderman_settings
+            if not rm.exportonly:
                 if rndr != "" and not item.environment:
                     start_render(rndr, base_archive.filepath, item, scene)
                     check_disps_processing(item, scene)
+            else:
+                rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
+                rm_shellscript(rndr_cmd, rm)
+                    
         else:
 
             exported_instances = []
@@ -270,6 +286,9 @@ def render(scene):
                if rndr != "":
                    start_render(rndr, base_archive.filepath, active_pass, scene)
                    check_disps_processing(active_pass, scene)
+            else:
+                rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
+                rm_shellscript(rndr_cmd, rm)
        
 update_counter = 0
 class RendermanRender(bpy.types.RenderEngine):
@@ -445,6 +464,9 @@ class RendermanRender(bpy.types.RenderEngine):
                     if rndr != "":
                         self.rm_start_render(rndr, base_archive.filepath, item, scene)
                         check_disps_processing(item, scene)
+                else:
+                    rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
+                    rm_shellscript(rndr_cmd, rm)
             else:
                 export(active_pass, scene)
                 close_all()
@@ -454,6 +476,9 @@ class RendermanRender(bpy.types.RenderEngine):
                    if rndr != "":
                        self.rm_start_render(rndr, base_archive.filepath, active_pass, scene)
                        check_disps_processing(active_pass, scene)
+                else:
+                    rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
+                    rm_shellscript(rndr_cmd, rm)
 
 ##################################################################################################################################
 

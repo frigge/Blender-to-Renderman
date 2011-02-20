@@ -48,11 +48,12 @@ exported_instances = []
 current_pass = base_archive = active_archive = None
 direction = ""
 
-
-def get_write():
+def rib_apnd(*args):
     global active_archive
-    return active_archive.file.write
-
+    active_archive.rib(*args)
+    
+def ribnl():
+    rib_apnd("")
 
 def create_child(data_path, type=""):
     global active_archive
@@ -105,9 +106,9 @@ class Archive():    # if specified open a new archive
                  filepath="",
                  scene=None,
                  type=""):
+        self.rib_code = []
         self.child_archives = []
         self.type = ""
-        self.file = None
         global base_archive, active_archive, direction, current_pass
         if not base_archive: 
             base_archive = self
@@ -166,6 +167,7 @@ class Archive():    # if specified open a new archive
             prop_path = data_path.data
         else:
             prop_path = data_path
+            
         
         if self.type in ['Pass', 'Settings', 'World', 'Instances']:
             pname = current_pass.name
@@ -173,7 +175,10 @@ class Archive():    # if specified open a new archive
             pname = ''
         elif filepath == "":
             dbprint("trying to get linked pass for this object", lvl=2, grp="archive")
-            pname = linked_pass(prop_path, current_pass).name
+            lp = linked_pass(prop_path, current_pass)
+            if lp == None:
+                return
+            pname = lp.name
             dbprint("linked pass is", pname, lvl=2, grp="archive")
         try:
             objname = data_path.name
@@ -190,40 +195,44 @@ class Archive():    # if specified open a new archive
         
         if rs.own_file:
             self.filepath = filepath
-            if not os.path.exists(path):
-                os.mkdir(path)
             if parent_archive != None:
                 if (type == "MESH"
                     and prop_path.export_type == 'DelayedReadArchive'):
-                    parent_archive.file.write('DelayedReadArchive "'
-                                              + filepath.replace('\\', '\\\\')
-                                              + '" [')
+                    bound_box = 'DelayedReadArchive "'
+                    bound_box += filepath.replace('\\', '\\\\')+ '" ['
                     for bound in obj.bound_box:
-                        parent_archive.file.write([" ".join(str(b))
-                                                   for b in bound])
-                        parent_archive.file.write(" ")
-                    parent_archive.file.write(']\n') 
-                parent_archive.file.write('ReadArchive "'
-                                          + filepath.replace('\\', '\\\\')
-                                          + '"\n')
-            if self.rs.overwrite or not os.path.exists(filepath):
-                self.file = open(filepath, "w")
-        else:
-            if parent_archive != None:
-                self.file = parent_archive.file
+                        bound_box +=[" ".join(str(b)) for b in bound] + "]"
+                    parent_archive.rib(bound_box)
+                else:
+                    parent_archive.rib('ReadArchive', '"' + filepath.replace('\\', '\\\\')+ '"')
+                    
         if parent_archive != None:
             parent_archive.child_archives.append(self)
+            
+    def rib(self, *args):
+        if self.rs.own_file:
+            code = []
+            for arg in args:
+                if type(arg) != type(""):
+                    code.append(str(arg))
+                else:
+                    code.append(arg)
+            self.rib_code.append(" ".join(code)+'\n')
+        else:
+            parent_archive.rib(*args)
         
     def close(self):
         global base_archive
+        if not os.path.exists(os.path.split(self.filepath)[0]):
+            os.mkdir(os.path.split(self.filepath)[0])
+        if self.rs.own_file and (self.rs.overwrite or not os.path.exists(self.filepath)):
+            file = open(self.filepath, "w")
+            file.writelines(self.rib_code)
+            file.close()
         if self == base_archive: 
             # if it's the base archive reset the global var back to None
             # because exporting finished
-            base_archive = None
-        if self.parent_archive and not self.parent_archive.file == self.file:   
-            self.file.close()
-        elif not self.parent_archive:     
-            self.file.close()
+            base_archive = None   
 
 
 #############################################
@@ -236,82 +245,104 @@ class Archive():    # if specified open a new archive
 
 def write_attrs_or_opts(groups, attr_opt, tab):
     global current_pass
-    write = get_write()
     for group in groups:
         grp = {"Option" : group.options, "Attribute" : group.attributes}        
         if group.export:
-            write(tab + attr_opt + ' \n\t"'+group.name+'" ')
-            writeparms(grp[attr_opt])                                       
+            rib_apnd(tab + attr_opt)
+            rib_apnd('\t"'+group.name+'"')
+            writeparms(grp[attr_opt], attr_opt=attr_opt, grp=group.name)                                       
 
-def write_custom_code(code, type_, position):
-    global base_archive
+def write_custom_code(code, position, type_=""):
+    global base_archive, current_pass
     global direction
-    rpass = base_archive.current_pass
-    if rpass.environment:
+    if current_pass.environment:
         env = True
     else:
         env = False
     if code:
         for c in code:
-            if type_ == "world":
+            if type_ == "World":
                 cpos = c.world_position
+            elif type_ == "Particles":
+                cpos = c.particle_position
             else:
                 cpos = c.position
-            if c.world_position == position:
-                if c.foreach or direction == "nz":
-                    write_single_parm(code.parameter)
+            print(type_, cpos, position)
+            if cpos == position:
+                if c.foreach or direction == "nz" or not env:
+                    write_single_parm(c.parameter, name=c.name)
                 
-def write_single_parm(parm):
+def write_single_parm(parm, name="", attr_opt="Attribute", grp=""):
     global base_archive, current_pass
     scene = base_archive.scene
-    write = get_write()
-    write('\n\t\t')
-    name = parm.name
+    rm = scene.renderman_settings
+    if attr_opt == "Option" and grp != "":
+        master_parm = rm.option_groups[grp].options[parm.name]
+    elif grp != "":
+        master_parm = rm.attribute_groups[grp].attributes[parm.name]
+    else:
+        master_parm = parm
+    ribnl()
+    rib_apnd('\t\t')
+    if name == "":
+        name = parm.name
     if name.find('[') != -1:
         name = name[:name.find('[')]
     if parm.export:
-        if parm.parametertype == 'string':
-            if parm.input_type == "texture":
+        if master_parm.parametertype == 'string':
+            if master_parm.input_type == "texture":
                 texture = bpy.data.textures[parm.textparameter]
                 if texture.renderman.type == 'bake':
                     string = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '\\\\')
             else:
                 string = parm.textparameter
-            write('"string '+name + '" ["' + string + '"]')
-        if parm.parametertype == 'float':
+            pname = '"string '+name + '"'
+            value = '["' + string + '"]'
+
+        if master_parm.parametertype == 'float':
             if parm.vector_size == 1:
-                write('"float '+name + '" [' + str(parm.float_one[0]) + ']')
+                pname = '"float '+name + '"'
+                value = '[' + str(parm.float_one[0]) + ']'
             elif parm.vector_size == 2:
-                write('"float[2] '+name + '" [' + str(parm.float_two[0]) + ' ' + str(parm.float_two[1]) + ']')
+                pname = '"float[2] '+name + '"'
+                value = '[' + str(parm.float_two[0]) + ' ' + str(parm.float_two[1]) + ']'
             elif parm.vector_size == 3:
-                write('"float[3] '+name + '" [' + str(parm.float_three[0]) + ' ' + str(parm.float_three[1]) + ' ' + str(parm.float_three[3]) + ']')                                        
-        if parm.parametertype == 'int':
+                pname = '"float[3] '+name + '"'
+                value = '[' + str(parm.float_three[0]) + ' ' + str(parm.float_three[1]) + ' ' + str(parm.float_three[3]) + ']'
+                                                   
+        if master_parm.parametertype == 'int':
             if parm.vector_size == 1:
-                write('"int '+name + '" [' + str(parm.int_one[0]) + ']')
+                pname = '"int '+name + '"'
+                value = '[' + str(parm.int_one[0]) + ']'
             elif parm.vector_size == 2:
-                write('"int[2] '+name + '" [' + str(parm.int_two[0]) + ' ' + str(parm.int_two[1]) + ']')
+                pname = '"int[2] '+name + '"'
+                value = '[' + str(parm.int_two[0]) + ' ' + str(parm.int_two[1]) + ']'
             elif parm.vector_size == 3:
-                write('"int[3] '+name + '" [' + str(parm.int_three[0]) + ' ' + str(parm.int_three[1]) + ' ' + str(parm.int_three[3]) + ']')
-        if parm.parametertype == 'color':
+                pname = '"int[3] '+name + '"'
+                value = '[' + str(parm.int_three[0]) + ' ' + str(parm.int_three[1]) + ' ' + str(parm.int_three[3]) + ']'
+                
+        if master_parm.parametertype == 'color':
             colR = parm.colorparameter[0]
             colG = parm.colorparameter[1]
             colB = parm.colorparameter[2]
-            write('"color '+name + '" [' + str(colR) + " " + str(colG) + " " + str(colB) + "]")
+            pname = '"color '+name + '"'
+            value = '[' + str(colR) + " " + str(colG) + " " + str(colB) + "]"
+        
+        rib_apnd(pname, value)
 
-def writeparms(path):
+def writeparms(path, attr_opt="attr", grp=""):
     global base_archive
     scene = base_archive.scene
-    write = get_write()
     for parm in path:
-        write_single_parm(parm)
-    write('\n')
+        write_single_parm(parm, attr_opt=attr_opt, grp=grp)
+    ribnl()
 
 def writeshaderparameter(parameterlist):
     global current_pass, base_archive
     scene = base_archive.scene
-    write = get_write()
     for i, parm in enumerate(parameterlist):
-        write('\n\t"'+parm.type+' '+parm.name+'"')
+        ribnl()
+        name = '"'+parm.type+' '+parm.name+'"'
         if parm.parametertype == 'string':
             if parm.input_type == "texture":
                 tx = ""
@@ -325,24 +356,29 @@ def writeshaderparameter(parameterlist):
                         tx = image_processing(texture.renderman.processing, image.filepath, tex=True)
                     elif texture.renderman.type == "bake":
                         tx = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '\\\\')
-                write(' ["'+tx+'"] ')
+                value = '["'+tx+'"]'
                         
             else:
                 string = parm.textparameter.replace('[frame]', framepadding(scene))
                 string = string.replace('[dir]', '')
-                write(' ["' + string + '"] ')
+                value = '["' + string + '"]'
+                
         elif parm.parametertype == 'float' and parm.vector_size == 1:
-            write(" [" + str(parm.float_one[0]) + '] ')
+            value = "[" + str(parm.float_one[0]) + ']'
+            
         elif parm.parametertype == 'color':
             colR = parm.colorparameter[0]
             colG = parm.colorparameter[1]
             colB = parm.colorparameter[2]
-            write(" [" + str(colR) + " " + str(colG) + " " + str(colB) + "] ")
+            value = "[" + str(colR) + " " + str(colG) + " " + str(colB) + "]"
+            
         elif parm.parametertype == 'float' and parm.vector_size == 3:
             x = str(parm.float_three[0])
             y = str(parm.float_three[1])
             z = str(parm.float_three[2])
-            write(" [" + x + " " + y + " " + z + "] ")
+            value = "[" + x + " " + y + " " + z + "]"
+            
+        rib_apnd('\t', name, value)
 
 def prepared_texture_file(file):
     global current_pass, base_archive
@@ -433,7 +469,6 @@ def motionblur( path,
                     
     global current_pass, active_archive
     dbprint("writing motion blur", "active archive is", active_archive.data_path, lvl=2, grp="mb")
-    write = get_write()
     scene = active_archive.scene
     fps = scene.render.fps
     motion_samples = path.motion_samples
@@ -441,14 +476,15 @@ def motionblur( path,
     
     sampletime = get_mb_sampletime(motion_samples, shutterspeed)
         
-    write('MotionBegin[')
-    write(' '.join([str(s) for s in sampletime]))
-    write(']\n')
+    mbbegin = 'MotionBegin['
+    mbbegin +=' '.join([str(s) for s in sampletime])
+    mbbegin += ']'
+    rib_apnd(mbbegin)
     for s in sampletime:
         if frameset:
             mb_setframe(s)
         function(*args, **keys)
-    write('MotionEnd\n')
+    rib_apnd('MotionEnd')
 
 #############################################
 #                                           #
@@ -464,14 +500,14 @@ def writeSettings(camrot):
     
     settings_archive = create_child(current_pass,
                                     type="Settings")
-    write = settings_archive.file.write
+                                    
     dbprint("write Scene Settings ...", lvl=1, grp="Settings")
 
     if not current_pass.displaydrivers:
         nodisplay = True
     else:
         nodisplay = False
-				
+                
     if current_pass.name == "Beauty" and not current_pass.displaydrivers:
         adddisp(current_pass)
     render = scene.render
@@ -513,6 +549,8 @@ def writeSettings(camrot):
             focal_length = rc.focal_length
         fstop = rc.fstop
 
+## custom code
+    write_custom_code(current_pass.scene_code, "begin")
 
 ## Declare AOVs
     default_vars = ["rgb", "rgba", "a", "z", "N", 
@@ -522,13 +560,15 @@ def writeSettings(camrot):
                         "dPdv"]
     for var in scene.renderman_settings.var_collection:
         if not var.name in default_vars:
-            write('Declare "'+var.name+'" "'+var.type_+'"\n')
+            rib_apnd('Declare', '"'+var.name+'" "'+var.type_+'"')
 
 
 ### Display driver
     for dispcount, display in enumerate(current_pass.displaydrivers):
+        disp = ""
+        disp_value = ""
         if not display.export:
-            write('#')
+            disp += '#'
         quant_min = str(display.quantize_min)
         quant_black = str(display.quantize_black)
         quant_max = str(display.quantize_max)
@@ -538,69 +578,73 @@ def writeSettings(camrot):
         file = display.file.replace("[frame]",framepadding(scene))
         dbprint(dir, lvl=1, grp="env")
         file = file.replace("[dir]", dir)
-        write('Display ')
+        disp += 'Display'
         if dispcount > 0:
-            write('"+')
+            disp_value = '"+'
         else:
-            write('"')
-        write(file + '" "' + display.displaydriver + '" "'+display.var+'" ')
-        write('"int[4] quantize" [' + quant_min + ' ' + quant_max + ' ' + quant_black + ' ' + quant_white + ']')
-        write(' "float[2] exposure" [' + gain + ' ' + gamma + ']')
+            disp_value = '"'
+        disp_value += file + '" "' + display.displaydriver + '" "'+display.var+'" '
+        disp_value += '"int[4] quantize" [' + quant_min + ' ' + quant_max + ' ' + quant_black + ' ' + quant_white + ']'
+        disp_value += ' "float[2] exposure" [' + gain + ' ' + gamma + ']'
+        rib_apnd(disp, disp_value)
         if display.custom_options:
-            write(" ")
-            writeshaderparameter(display.custom_options, write)
-        write('\n')
+            writeshaderparameter(display.custom_options)
+        ribnl()
 
 ### Format
-    write('Format ')
-    write(str(resx) +' '+ str(resy) +' '+ str(aspectratio)+'\n')
+    rib_apnd('Format', str(resx) +' '+ str(resy) +' '+ str(aspectratio))
 
 ### ScreenWindow
-    write('ScreenWindow '+left +' '+ right +' '+ top +' '+ bottom + '\n')
+    rib_apnd('ScreenWindow', left +' '+ right +' '+ top +' '+ bottom)
 
 ### Clipping
-    write('Clipping '+str(nearclipping)+' '+str(farclipping)+'\n')
+    rib_apnd('Clipping', str(nearclipping)+' '+str(farclipping))
 
 ### DepthOfField
     dbprint(current_pass.camera_object, lvl=2, grp="Settings")
     if current_pass.camera_object == "" and scene.camera.data.depthoffield:
-        write('DepthOfField '+str(fstop)+' '+str(focal_length)+' '+str(dof_distance)+'\n')
+        rib_apnd('DepthOfField', str(fstop)+' '+str(focal_length)+' '+str(dof_distance))
 
 ### PixelFilter
     filter = current_pass.pixelfilter.filterlist
     fwidth = str(current_pass.pixelfilter.filterwidth)
     fheight = str(current_pass.pixelfilter.filterheight)
-    write('PixelFilter "'+filter+'" '+fwidth+' '+fheight+'\n')
+    rib_apnd('PixelFilter', '"'+filter+'" '+fwidth+' '+fheight)
     
 ### PixelSamples
     sampx = str(current_pass.pixelsamples_x)
     sampy = str(current_pass.pixelsamples_y)
-    write('PixelSamples '+sampx+' '+sampy+'\n')    
+    rib_apnd('PixelSamples', sampx+' '+sampy)    
 
 ### Options
     write_attrs_or_opts(current_pass.option_groups, "Option", "")
-    write('\n')
+    ribnl()
     
 ### Hider
     if current_pass.hider != "":
-        write('Hider "'+current_pass.hider+'"')
+        rib_apnd('Hider', '"'+current_pass.hider+'"')
         hider_parms = current_pass.hider_list[current_pass.hider].options
         writeparms(hider_parms)
-        write('\n')    
+        ribnl()   
 
 ### Orientation    
-    write('Orientation "lh"\n')
+    rib_apnd('Orientation "lh"')
 
 ### Custom Code
     if current_pass.scene_code:
         for code in current_pass.scene_code:
-            write(code.name + '\n')
+            rib_apnd(code.name)
 
     dbprint("Done", lvl=1, grp="Settings")
     
 ### Camera
     if current_pass.displaydrivers:
         writeCamera(camera, camrot)
+        
+## custom code
+    write_custom_code(current_pass.scene_code, "end")
+    
+    
     set_parent_active()
       
 
@@ -621,13 +665,14 @@ def round(float):
 def writetransform(obj, mx = None):
     if mx: matrix = mx
     else: matrix = obj.matrix_world
-    write = get_write()
-    write('ConcatTransform [\t')    
+    str_mx = 'ConcatTransform [\t'
     for i, row in enumerate(matrix):
         for val in row:
-            write(" " + str(val))
-        if not i == len(matrix)-1: write('\n\t\t\t\t\t')
-    write(']\n')
+            str_mx += " " + str(val)
+        if not i == len(matrix)-1: 
+            rib_apnd(str_mx)
+            str_mx = '\t\t\t\t\t'
+    rib_apnd(str_mx+']')
 
 def objtransform(obj, mx = None):
     global base_archive, current_pass
@@ -649,10 +694,9 @@ def writeCamera(cam, camrot):
     global current_pass, direction, base_archive
     dir = direction
     scene = base_archive.scene
-    write = get_write()
     print("write Camera Settings ...")
     
-    def writeCameraTransform(trans):
+    def writeCameraTransform(trans, cam, camrot):
         matrix = cam.matrix_world
         ribx = str(matrix[3][0]*-1)
         riby = str(matrix[3][1]*-1)
@@ -668,7 +712,7 @@ def writeCamera(cam, camrot):
                         "RotY" : "Rotate "+str(roty*-1)+" 0 1 0\n",
                         "RotZ" : "Rotate "+str(rotz*-1)+" 0 0 1\n",
                         "Translate" : "Translate "+ribx+" "+riby+" "+ribz+"\n" }
-        write(transform[trans])
+        rib_apnd(transform[trans])
         
     def writePerspective(fov, perspective):
         if perspective:
@@ -677,11 +721,11 @@ def writeCamera(cam, camrot):
         elif not perspective:
             typestring = '"orthographic"\n'
 
-        write('Projection '+typestring)
+        rib_apnd('Projection', typestring)
 
     if current_pass.motionblur:
         shutterspeed = current_pass.shutterspeed_sec * scene.render.fps
-        write('Shutter 0 '+str(shutterspeed)+'\n')
+        rib_apnd('Shutter 0', str(shutterspeed))
 
     def checkoutFOVnPersp():
         perspective = True
@@ -732,7 +776,7 @@ def writeCamera(cam, camrot):
     writePerspective(fov, perspective)
 
     if not current_pass.environment:
-        write("Scale 1 1 -1\n")
+        rib_apnd("Scale", 1, 1, -1)
         
     ##Camera Transformation Blur
 
@@ -740,16 +784,16 @@ def writeCamera(cam, camrot):
     if ts and current_pass.motion_blur:
         for t in ["RotX", "RotY", "RotZ", "Translate"]:
             motionblur( linked_pass(cam, current_pass),
-                        current_pass,
-                        write,
-                        scene,
                         writeCameraTransform,
-                        t)
+                        t,
+                        cam,
+                        camrot)
     else:
         for t in ["RotX", "RotY", "RotZ", "Translate"]:
-            writeCameraTransform(t)
+            writeCameraTransform(t, cam, camrot)
               
-    write("\n\n")
+    ribnl()
+    ribnl()
     print("Done")
     
 
@@ -765,22 +809,17 @@ def writeWorld():
     scene = base_archive.scene
     
     world_archive = create_child(current_pass, type = "World")
-    write = world_archive.file.write
     global_shader = current_pass.global_shader
 
-    write("WorldBegin\n")
+    rib_apnd("WorldBegin")
     if current_pass.override_shadingrate:
-        write("ShadingRate "+str(current_pass.shadingrate)+"\n")
+        rib_apnd("ShadingRate", current_pass.shadingrate)
     write_attrs_or_opts(current_pass.attribute_groups, "Attribute", "")
-    write('\n\n')
-    ### Custom Code
+    ribnl()
+    ribnl()
     
-    wc = current_pass.world_code
-    if wc:
-        for code in current_pass.world_code:
-            if code.world_position == "begin":
-                
-                write(code.name + '\n')
+    ## custom code
+    write_custom_code(current_pass.world_code, "begin", type_="World")
             
     writeshader(global_shader.surface_shader, global_shader.surface_shader_parameter, "Surface")
     writeshader(global_shader.atmosphere_shader, global_shader.atmosphere_shader_parameter, "Atmosphere")
@@ -801,18 +840,19 @@ def writeWorld():
     if lights:
         for light in lights:
             writeLight(light)
-        write('\n')
+        ribnl()
         for light in lights:
             al = False
             if light.type != 'LAMP':
                 m = light.active_material
                 if m:
-                    if linked_pass(m, current_pass).arealight_shader != "":
+                    lp = linked_pass(m, current_pass)
+                    if lp != None and lp.arealight_shader != "":
                         al = True
             if light.type == 'LAMP' or al:
-                write('Illuminate "'+light.name+'" 1\n')
+                rib_apnd('Illuminate', '"'+light.name+'"', 1)
         
-    write('\n')
+    ribnl()
 
     if objects:
         for obj in objects:
@@ -820,8 +860,12 @@ def writeWorld():
                 and not obj.name == current_pass.camera_object
                 and check_visible(obj, scene)):
                 writeObject(obj)
-                writeParticles(obj)                 
-    write("WorldEnd\n")
+                writeParticles(obj)
+    
+    ## custom code
+    write_custom_code(current_pass.world_code, "end_inside", type_="World")
+    rib_apnd("WorldEnd")
+    write_custom_code(current_pass.world_code, "end_outside", type_="World")
 
 
 #############################################
@@ -837,57 +881,62 @@ def writeLight(light, scene = None):
         scene = base_archive.scene
     rmansettings = scene.renderman_settings
     al = False
+    if light.type == "LAMP":
+        if linked_pass(light.data, current_pass) == None:
+            return
     if light.type != 'LAMP' and light.active_material:
         mat = light.active_material
-        try:
-            alshader = linked_pass(mat, current_pass).arealight_shader
-        except:
-            print(mat, current_pass)
-            raise
+        
+        lp = linked_pass(mat, current_pass)
+        if lp == None:
+            return
+        alshader = lp.arealight_shader
+            
         if alshader != "":
             al = True
-            print("yo")
             
     if (light.type == 'LAMP' or al) and not light.hide_render:
         if check_visible(light, scene):
             light_archive = create_child(light,
                                         type = "LAMP")
-            write = light_archive.file.write
             
             print("write "+light.name)
             rotx = str(math.degrees(light.rotation_euler.x))
             roty = str(math.degrees(light.rotation_euler.y))
             rotz = str(math.degrees(light.rotation_euler.z))          
     
-            write("\nAttributeBegin\n")      
+            ribnl()
+            rib_apnd("AttributeBegin")      
             objtransform(light)
             if al:
                 write_attrs_or_opts(linked_pass(light, current_pass).attribute_groups, "Attribute", "")
-                write('AreaLightSource ')
+                al_def = 'AreaLightSource '
                 parameterlist = linked_pass(mat, current_pass).light_shader_parameter
-                write('"'+alshader.replace("."+rmansettings.shaderbinary, "")+'" "'+light.name+'" ')
+                al_def += '"'+alshader.replace("."+rmansettings.shaderbinary, "")+'" "'+light.name+'" '
+                rib_apnd(al_def)
                 writeshaderparameter(parameterlist)
-                write('\n')
+                ribnl()
                 export_type = light.data.export_type
                 
                 if light.data.show_double_sided:
-                    write('Sides 2\n')
+                    rib_apnd('Sides 2')
                     
                 if mat: writeMaterial(mat)
                 
                 if export_type == 'ObjectInstance':
-                    write('ObjectInstance "'+light.data.name+'"\n')
+                    rib_apnd('ObjectInstance', '"'+light.data.name+'"')
                 else:
                     export_object(light, export_type)
             else:
                 write_attrs_or_opts(linked_pass(light.data, current_pass).attribute_groups, "Attribute", "")
-                write('LightSource ')
+                l_def = 'LightSource '
                 parameterlist = linked_pass(light.data, current_pass).light_shader_parameter
-                write('"'+linked_pass(light.data, current_pass).shaderpath.replace("."+rmansettings.shaderbinary, "")+'" "'+light.name+'" ')         
+                l_def += '"'+linked_pass(light.data, current_pass).shaderpath.replace("."+rmansettings.shaderbinary, "")+'" "'+light.name+'" '
+                rib_apnd(l_def)      
                 writeshaderparameter(parameterlist)
-                write('\n')
+                ribnl()
 
-            write('AttributeEnd\n')
+            rib_apnd('AttributeEnd')
             print("Done")
             
             set_parent_active()
@@ -901,13 +950,12 @@ def writeLight(light, scene = None):
 def writeshader(shader, parms, type):
     global base_archive
     scene = base_archive.scene
-    write = get_write()
     rmansettings = scene.renderman_settings
     if shader:
         shader = shader.replace("."+rmansettings.shaderbinary, "")
-        write(type+' "'+shader+'" ')
+        rib_apnd(type, '"'+shader+'"')
         writeshaderparameter(parms)
-        write('\n')             
+        ribnl()             
 
 def writeMaterial(mat, mat_archive=None, active_matpass=False):
     global active_archive
@@ -915,66 +963,63 @@ def writeMaterial(mat, mat_archive=None, active_matpass=False):
     p = active_archive
     if mat_archive == None:
         mat_archive = Archive(data_path=mat, parent_archive=p)
-    write = mat_archive.file.write
-    rmansettings = scene.renderman_settings
     if active_matpass:
         mat_pass=mat.renderman[mat.renderman_index]
     else:
         mat_pass = linked_pass(mat, current_pass)
+    if mat_pass == None:
+        return
+    rmansettings = scene.renderman_settings
     
-    if mat_pass:
-        if mat_pass.matte:
-            write('Matte 1\n')
-        ## Color & Opacity Motion Blur
-        def writeColor():  
-            colR = mat_pass.color.r
-            colG = mat_pass.color.g
-            colB = mat_pass.color.b
-            write('Color ['+str(colR)+' '+str(colG)+' '+str(colB)+']\n')
-           
-        def writeOpacity():
-            opR, opG, opB = mat_pass.opacity    
-            write('Opacity ['+str(opR)+' '+str(opG)+' '+str(opB)+']\n')
-            
+    if mat_pass.matte:
+        rib_apnd('Matte 1')
+    ## Color & Opacity Motion Blur
+    def writeColor():  
+        colR = mat_pass.color.r
+        colG = mat_pass.color.g
+        colB = mat_pass.color.b
+        rib_apnd('Color', '[', colR, colG, colB, ']')
+       
+    def writeOpacity():
+        opR, opG, opB = mat_pass.opacity    
+        rib_apnd('Opacity', '[', opR, opG, opB, ']')
+        
 
 
-        def matblur(function, *args):     
-            motionblur( mat_pass,
-                        current_pass,
-                        write,
-                        scene,
-                        function,
-                        *args)
+    def matblur(function, *args):     
+        motionblur( mat_pass,
+                    function,
+                    *args)
 
-        if mat_pass.color_blur:                
-            matblur(writeColor)
-        else:
-            writeColor()
-            
-        if mat_pass.opacity_blur:        
-            matblur(writeOpacity)
-        else:
-            writeOpacity()
+    if mat_pass.color_blur:                
+        matblur(writeColor)
+    else:
+        writeColor()
+        
+    if mat_pass.opacity_blur:        
+        matblur(writeOpacity)
+    else:
+        writeOpacity()
 
-        surface_shader = mat_pass.surface_shader
-        surface_parameter = mat_pass.surface_shader_parameter 
-        displacement_shader = mat_pass.displacement_shader
-        displacement_parameter = mat_pass.disp_shader_parameter 
-        interior_shader = mat_pass.interior_shader
-        interior_parameter = mat_pass.interior_shader_parameter
-        exterior_shader = mat_pass.exterior_shader
-        exterior_parameter = mat_pass.exterior_shader_parameter    
-      
-        if mat_pass.shader_blur:
-            matblur(writeshader, displacement_shader, displacement_parameter, "Displacement")
-            matblur(writeshader, surface_shader, surface_parameter, "Surface")
-            matblur(writeshader, interior_shader, interior_parameter, "Interior")
-            matblur(writeshader, exterior_shader, exterior_parameter, "Exterior")
-        else:
-            writeshader(displacement_shader, displacement_parameter, "Displacement")
-            writeshader(surface_shader, surface_parameter, "Surface")
-            writeshader(interior_shader, interior_parameter, "Interior")
-            writeshader(exterior_shader, exterior_parameter, "Exterior")
+    surface_shader = mat_pass.surface_shader
+    surface_parameter = mat_pass.surface_shader_parameter 
+    displacement_shader = mat_pass.displacement_shader
+    displacement_parameter = mat_pass.disp_shader_parameter 
+    interior_shader = mat_pass.interior_shader
+    interior_parameter = mat_pass.interior_shader_parameter
+    exterior_shader = mat_pass.exterior_shader
+    exterior_parameter = mat_pass.exterior_shader_parameter    
+  
+    if mat_pass.shader_blur:
+        matblur(writeshader, displacement_shader, displacement_parameter, "Displacement")
+        matblur(writeshader, surface_shader, surface_parameter, "Surface")
+        matblur(writeshader, interior_shader, interior_parameter, "Interior")
+        matblur(writeshader, exterior_shader, exterior_parameter, "Exterior")
+    else:
+        writeshader(displacement_shader, displacement_parameter, "Displacement")
+        writeshader(surface_shader, surface_parameter, "Surface")
+        writeshader(interior_shader, interior_parameter, "Interior")
+        writeshader(exterior_shader, exterior_parameter, "Exterior")
     set_parent_active()
 
 
@@ -996,36 +1041,42 @@ def writeParticles(obj):
             if psystem.settings.type == 'EMITTER':
                 rman = linked_pass(psystem.settings, current_pass)
                 particle_archive = create_child(psystem)
-                write = particle_archive.file.write
-                write("\nAttributeBegin ##Particle System\n")
-                write('Attribute "identifier" "name" ["'+obj.name+'_'+psystem.name+'"]\n')
+                ribnl()
+                rib_apnd("AttributeBegin ##Particle System")
+                rib_apnd('Attribute', '"identifier"', '"name"', '["'+obj.name+'_'+psystem.name+'"]')
+                
+                ## custom code
+                write_custom_code(rman.custom_code, "begin", type_="Particles")
+                ribnl()
                 try:
                     mat = obj.material_slots[rman.material_slot]
                 except IndexError:
                     mat = None
-                if mat: writeMaterial(mat)
+                if mat: writeMaterial(mat.material)
                 write_attrs_or_opts(linked_pass(obj, current_pass).attribute_groups, "Attribute", "")
                 
                 if current_pass.motionblur and rman.motion_blur:
                     locations, sizes = mb_gather_point_locations(psystem)
                     shutterspeed = current_pass.shutterspeed_sec * scene.render.fps
                     sampletime = get_mb_sampletime(rman.motion_samples, shutterspeed)
-                    write('MotionBegin[')
-                    write(' '.join([str(s) for s in sampletime]))
-                    write(']\n')
+                    mbstr = 'MotionBegin['
+                    mbstr += ' '.join([str(s) for s in sampletime])
+                    mbstr += ']'
+                    rib_apnd(mbstr)
                     for i, s in enumerate(sampletime):
                         mb_setframe(s)
                         writeParticle_data(psystem, locs = locations, sizes = sizes, sample = i)
-                    write('MotionEnd\n')
+                    rib_apnd('MotionEnd')
                 else:
                     writeParticle_data(psystem)
-                write('AttributeEnd\n')
+                 ## custom code
+                write_custom_code(rman.custom_code, "end", type_="Particles")
+                rib_apnd('AttributeEnd')
                 
 def mb_gather_point_locations(psystem):
     locations = []
     sizes = []
-    global active_archive
-    current_pass = active_archive.current_pass
+    global active_archive, current_pass
     scene = active_archive.scene
     rman = linked_pass(psystem.settings, current_pass)
     shutterspeed = current_pass.shutterspeed_sec * scene.render.fps
@@ -1037,112 +1088,102 @@ def mb_gather_point_locations(psystem):
         siz_sample = []
         mb_setframe(s)
         for part in psystem.particles:
-            if part.alive_state == 'ALIVE':
-                locx = str(part.location.x)
-                locy = str(part.location.y)
-                locz = str(part.location.z)
-                loc_sample.append([locx, locy, locz])
+            locx = str(part.location.x)
+            locy = str(part.location.y)
+            locz = str(part.location.z)
+            loc_sample.append([locx, locy, locz])
         locations.append(loc_sample)
         
         for i, part in enumerate(psystem.particles):
-            if part.alive_state == 'ALIVE':
-                size = str(part.size)
-                siz_sample.append(size)
+            size = str(part.size)
+            siz_sample.append(size)
         sizes.append(siz_sample)
-    print("locations", len(locations), "sizes", len(sizes))
     return locations, sizes
 
 def writeParticle_data(psystem, locs = [], sizes = [], sample = -1):
-    global active_archive
+    global active_archive, current_pass
     scene = active_archive.scene
-    current_pass = active_archive.current_pass
     pdata_archive = Archive(psystem, type = "Particle Data", parent_archive = active_archive)
-    write = pdata_archive.file.write
     rman = linked_pass(psystem.settings, current_pass)
     if rman:
+         ## custom code
+        write_custom_code(rman.custom_code, "begin_data", type_="Particles")
         ## Points
         if rman.render_type == "Points":
-            write('Points\n')
-            write = get_write()
-            write('"P" [')
-            if locs != []:
-                enum = locs[len(locs)-1]
-            else:
-                enum = psystem.particles
+            rib_apnd('Points')
+            rib_apnd('"P" [')
+            enum = psystem.particles
             for i, part in enumerate(enum):    
                 if enum != psystem.particles:
-                    if locs != [] and i < len(locs[sample]):
-                        write(' '.join(locs[sample][i])+'\n')
-                    else:
-                        write(' '.join(locs[len(locs)-1][i])+'\n')
-                elif part.alive_state == 'ALIVE':
-                    locx = str(part.location.x)
-                    locy = str(part.location.y)
-                    locz = str(part.location.z)
-                                       
-                    write(locx+' '+locy+' '+locz+'\n')
-            write(']\n')
-            
-            write('"width" [')
-            if sizes != []:
-                enum = sizes[len(sizes)-1]
-            else:
-                enum = psystem.particles
-            for i, part in enumerate(enum):
-                if enum != psystem.particles:
-                    if sizes != [] and i < len(sizes[sample]):
+                    if psystem.particles[i].alive_state == 'ALIVE':
                         try:
-                            write(sizes[sample][i]+'\n')
-                        except:
-                            print("size", len(sizes), len(sizes[sample]), "locations", len(locs), len(locs[sample]))
-                            raise
-                    else:
-                        write(sizes[len(sizes)-1][i]+'\n')
+                            rib_apnd(*locs[sample][i])
+                        except IndexError:
+                            rib_apnd(*part.location)
+                elif part.alive_state == 'ALIVE':
+                    locx = part.location.x
+                    locy = part.location.y
+                    locz = part.location.z
+                                       
+                    rib_apnd(locx, locy, locz)
+            rib_apnd(']')
+            
+            rib_apnd('"width" [') 
+            enum = psystem.particles
+            for i, part in enumerate(enum):    
+                if enum != psystem.particles:
+                    if psystem.particles[i].alive_state == 'ALIVE':
+                        try:
+                            rib_apnd(*sizes[sample][i])
+                        except IndexError:
+                            rib_apnd(part.size)
                 elif part.alive_state == 'ALIVE':
                     size = str(part.size)
-                    write(size+'\n')
-            write(']\n')
-            
+                    rib_apnd(size)
+            rib_apnd(']')
+            ## custom code
+            write_custom_code(rman.custom_code, "end_data", type_="Particles")
         ## Objects
         elif rman.render_type == "Object":
             part_obj = scene.objects[rman.object]
             
             
-        #def transform(part):          
-        #        mx_new = mathutils.Matrix()
-        #        trans = part.location
-        #        mx_trans = mx_new.Translation(trans)
-        #        mx_rot = part.rotation.to_matrix().to_4x4()
-        #        mx_scale = mx_new.Scale(part.size, 4)
-        #        mx = mx_trans * mx_scale * mx_rot
-        #        return mx
-        #
-        #def mb_trans_particles(matrices, i):
-        #    for m in matrices:
-        #        objtransform(None, mx = matrices.pop(0)[i])
-        #
-        #matrices = []
-        #mx_set = []
-        #for i, part in enumerate(psystem.particles):
-        #    mx_set.append(transform(part))
-        #matrices.append(mx_set)                   
-        #
-        #for i, part in enumerate(psystem.particles):
-        #    if scene.frame_current >= part.birth_time:
-        #        write('AttributeBegin\n')
-        #        
-        #        if rman.motion_blur and current_pass.motionblur:
-        #            motionblur( rman,
-        #                        mb_trans_particles,
-        #                        matrices,
-        #                        i,
-        #                        frameset = 0)
-        #        else:
-        #            mb_trans_particles
-        #                                    
-        #        writeObject(part_obj) 
-            
-        #        write('AttributeEnd\n')
+        #~ def transform(part):          
+                #~ mx_new = mathutils.Matrix()
+                #~ trans = part.location
+                #~ mx_trans = mx_new.Translation(trans)
+                #~ mx_rot = part.rotation.to_matrix().to_4x4()
+                #~ mx_scale = mx_new.Scale(part.size, 4)
+                #~ mx = mx_trans * mx_scale * mx_rot
+                #~ return mx
+        #~ 
+        #~ def mb_trans_particles(matrices, i):
+            #~ for m in matrices:
+                #~ objtransform(None, mx = matrices.pop(0)[i])
+        #~ 
+        #~ matrices = []
+        #~ mx_set = []
+        #~ for i, part in enumerate(psystem.particles):
+            #~ mx_set.append(transform(part))
+        #~ matrices.append(mx_set)                   
+        #~ 
+        #~ for i, part in enumerate(psystem.particles):
+            #~ if scene.frame_current >= part.birth_time:
+                #~ write('AttributeBegin\n')
+                #~ 
+                #~ if rman.motion_blur and current_pass.motionblur:
+                    #~ motionblur( rman,
+                                #~ mb_trans_particles,
+                                #~ matrices,
+                                #~ i,
+                                #~ frameset = 0)
+                #~ else:
+                    #~ mb_trans_particles
+                                            #~ 
+                #~ writeObject(part_obj) 
+            #~ 
+                #~ write('AttributeEnd\n')
+        
     set_parent_active()
                                 
 
@@ -1160,19 +1201,19 @@ def writeObject(obj):
         al = False
         m = obj.active_material
         if m:
-            if linked_pass(m, current_pass).arealight_shader != "":
+            lp = linked_pass(m, current_pass)
+            if lp != None and lp.arealight_shader != "":
                 al = True
         obj_pass = linked_pass(obj, current_pass)
         if obj_pass and not al:               
             obj_archive = create_child(obj)
-            write = obj_archive.file.write
             mat = obj.active_material            
             
-            write("##"+obj.name+'\n')
+            rib_apnd("##"+obj.name)
             if obj.parent:
-                write('#child of '+obj.parent.name+'\n')
-            write("AttributeBegin\n")
-            write('Attribute "identifier" "name" ["'+obj.name+'"]\n')
+                rib_apnd('#child of '+obj.parent.name)
+            rib_apnd("AttributeBegin")
+            rib_apnd('Attribute',  '"identifier"',  '"name"', '["'+obj.name+'"]')
             write_attrs_or_opts(obj_pass.attribute_groups, "Attribute", "")
                 
             objtransform(obj)
@@ -1181,17 +1222,18 @@ def writeObject(obj):
             if mat: writeMaterial(mat)
             
             if obj.data.show_double_sided:
-                write('Sides 2\n')
+                rib_apnd('Sides 2')
                 
             if not current_pass.override_shadingrate:
-                write('ShadingRate '+str(obj_pass.shadingrate)+'\n')
+                rib_apnd('ShadingRate', obj_pass.shadingrate)
             
             export_type = obj.data.export_type
             if export_type == 'ObjectInstance':
-                write('ObjectInstance "'+obj.data.name+'"\n')
+                rib_apnd('ObjectInstance', '"'+obj.data.name+'"')
             else:
                 export_object(obj, export_type)
-            write("AttributeEnd\n\n")
+            rib_apnd("AttributeEnd")
+            ribnl()
             set_parent_active()
         
 
@@ -1211,77 +1253,75 @@ def writeMesh(mesh):
     global active_archive
     mesh_archive = create_child(mesh.data, type = "MESH")
     scene = mesh_archive.scene
-    print("This Polygon Object is a", ptype)
-    mwrite = mesh_archive.file.write
-#        mwrite("AttributeBegin\n")
-
-#    for face in mesh.data.faces:        #ugly hack!! (rather use subD Mesh and ignore smoothing)
-#        if face.use_smooth:
-#            smoothshade = True
-#    if smoothshade:
-#        mwrite('ShadingInterpolation "smooth"\n')
-#    else:
-#        mwrite('ShadingInterpolation "constant"\n')
-    
-        #check for SubSurf
-
+    dbprint("This Polygon Object is a", ptype, grp="Export", lvl=2)
 
     #Apply Modifiers
     export_mesh = mesh.create_mesh(scene, True, 'RENDER')
-    print("apllied modifiers:", export_mesh)
+    dbprint("apllied modifiers:", export_mesh, lvl=2, grp="Export")
     
     
     if subsurf:
-        mwrite('SubdivisionMesh "catmull-clark" ')
+        rib_apnd('SubdivisionMesh', '"catmull-clark"')
     elif ptype == 'pointspolygons':
-        mwrite("PointsPolygons ")
+        rib_apnd("PointsPolygons")
     elif ptype == 'points':
-        mwrite('Points\n')        
+        rib_apnd('Points')        
     vindices = []
     if ptype in ['subdivisionmesh', 'pointspolygons']:
         #write Polygon Vertex Count
-        mwrite("[")
-        for face in export_mesh.faces:
-            mwrite(str(len(face.vertices))+" ")
-        mwrite("]")
+        poly_init_str = "["
+        poly_init_str += " ".join([str(len(face.vertices)) for face in export_mesh.faces])
+        poly_init_str += "]"
+        rib_apnd(poly_init_str)
     
         #write Polygon Vertex Index
-        mwrite(" [")
+        vindex = "["
         for face in export_mesh.faces:
             for v in face.vertices:
-                mwrite(str(v.real)+" ")
+                vindex += str(v.real)+" "
                 vindices.append(v.real)
-        mwrite("]\n")
+        vindex += "]"
+        rib_apnd(vindex)
     
         if subsurf:
-            mwrite('["interpolateboundary"] [0 0] [] []\n')
+            rib_apnd('["interpolateboundary"] [0 0] [] []')
 
         
     #write Normals
-    mwrite('"N" [')
-    for vindex, n in enumerate(export_mesh.vertices):
-        if vindex in vindices or ptype != 'points' and mesh.data.export_normals:
-            mwrite(str(n.normal[0])+' '+str(n.normal[1])+' '+str(n.normal[2])+' ')
-    mwrite(']\n')
+    if mesh.data.export_normals:
+        rib_apnd('"N"')
+        rib_apnd("[")
+        for vindex, n in enumerate(export_mesh.vertices):
+            for f in export_mesh.faces:
+                for fv in f.vertices:
+                    if vindex == fv.real:
+                        if f.use_smooth:
+                            normal = n.normal
+                        else:
+                            normal = f.normal
+            rib_apnd(*normal)
+        rib_apnd(']')
     
     #write Vertex Coordinates
-    mwrite('"P" [')
+    rib_apnd('"P"')
+    rib_apnd('[')
     for vindex, v in enumerate(export_mesh.vertices):
         if vindex in vindices or ptype == 'points': #make sure vertex is in a polygon, as otherwise renderman cries
-            mwrite(str(v.co.x)+' '+str(v.co.y)+' '+str(v.co.z)+' ')                
-    mwrite("]\n")
+            rib_apnd(v.co.x, v.co.y, v.co.z)                
+    rib_apnd("]")
 
     p_scale = mesh.data.points_scale
     
     if ptype == "points" and mesh.data.size_vgroup != "":
-        mwrite('"width" [')
+        rib_apnd('"width"')
+        rib_apnd('[')
         for vert in mesh.data.vertices:
             i = mesh.vertex_groups[mesh.data.size_vgroup].index
             size_value = vert.groups[i].weight
-            mwrite(str(size_value*p_scale)+' ')
-        mwrite(']')
+            rib_apnd(size_value*p_scale)
+        rib_apnd(']')
     elif ptype == "points":
-        mwrite('"constantwidth" ['+str(p_scale)+']\n')       
+        rib_apnd('"constantwidth"', '['+str(p_scale)+']')       
     
     #write UV coordinates        
     uv = False
@@ -1293,14 +1333,15 @@ def writeMesh(mesh):
             s = "s"+str(uvlayer)
             t = "t"+str(uvlayer)
         if scene.renderman_settings.facevertex:
-            mwrite('"facevertex float[2] '+s+t+'" [')
+            rib_apnd('"facevertex float[2] '+s+t+'"')
+            rib_apnd('[')
         else:
-            mwrite('"facevarying float[2] '+s+t+'" [')
+            rib_apnd('"facevarying float[2] '+s+t+'"')
+            rib_apnd('[')
         for face in uv_texture.data:
             for co in face.uv:
-                mwrite(" "+str(co[0])+" "+str(1-co[1])+" ")
-        mwrite("]\n")
-#        mwrite("AttributeEnd")
+                rib_apnd(co[0], 1-co[1])
+        rib_apnd("]")
     bpy.data.meshes.remove(export_mesh)
     set_parent_active()
 
@@ -1313,7 +1354,9 @@ def writeMesh(mesh):
 
 def export_object(obj, type = "ReadArchive"):
     global current_pass, active_archive
-    write = active_archive.file.write
+    obj_pass =linked_pass(obj, current_pass)
+    if obj_pass == None:
+        return
     
     if type == 'ObjectInstance':
         inst = True
@@ -1324,9 +1367,8 @@ def export_object(obj, type = "ReadArchive"):
         global exported_instances
         if obj.data.name in exported_instances: return 0
         exported_instances.append(obj.data.name)
-        write('ObjectBegin "'+obj.data.name+'"\n')
+        rib_apnd('ObjectBegin', '"'+obj.data.name+'"')
 
-    obj_pass =linked_pass(obj, current_pass)
     if obj_pass.deformation_blur and current_pass.motionblur:
         motionblur(obj_pass,
                    writeMesh,
@@ -1334,14 +1376,14 @@ def export_object(obj, type = "ReadArchive"):
     else:
         writeMesh(obj)
         
-    if inst: write('ObjectEnd\n')
+    if inst: rib_apnd('ObjectEnd')
         
 #########################            
 
             
 
 def export(rpass, scene):
-    global current_pass, direction, base_archive, exported_instances
+    global current_pass, direction, base_archive, exported_instances, active_archive
     exported_instances = []
     current_pass = rpass
     degrees = math.degrees
@@ -1360,10 +1402,11 @@ def export(rpass, scene):
         for i, dir in enumerate(envdirections):
             direction = dir            
             camrot = envrots[i]
-            
+            rib_apnd("FrameBegin", scene.frame_current)
             pass_archive = create_child(scene, type="Pass")
             writerib(camera, camrot, dir = dir)
-            close_all()
+            active_archive = base_archive
+            rib_apnd("FrameEnd")
             invoke_renderer(filepath.replace('[dir]', dir), scene)
             
             check_disps_processing(rpass, scene, env=i)
@@ -1374,9 +1417,11 @@ def export(rpass, scene):
         rot = camera.rotation_euler
                         
         camrot = [degrees(rot[0]), degrees(rot[1]), degrees(rot[2])]    
-
+        rib_apnd("FrameBegin", scene.frame_current)
         pass_archive = create_child(scene, type="Pass")
         writerib(camera, camrot, dir = "")
+        active_archive=base_archive
+        rib_apnd("FrameEnd")
 
 def check_disps_processing(current_pass, scene, env=-1):
     for disp in current_pass.displaydrivers:

@@ -126,6 +126,8 @@ class ImageProcessing(bpy.types.IDPropertyGroup):
     process = bpy.props.BoolProperty(    name="Process",
                                         default=False,
                                         description="run Texture processing tool to convert into rendermans intern texture format")
+                                        
+    overwrite = bpy.props.BoolProperty(name="Overwrite", description="Overwrite existing", default=False)
     
     output = bpy.props.StringProperty(name="Output",
                                   description="name of Image Output")
@@ -182,6 +184,11 @@ class CustomCodeCollection(bpy.types.IDPropertyGroup):
     world_position = bpy.props.EnumProperty(name="Position", items=(("begin", "Begin", ""),
                                                                     ("end_inside", "End (Inside World Block)", ""),
                                                                     ("end_outside", "End (Outside World Block)", "")))
+    
+    particle_position = bpy.props.EnumProperty(name="Position", items=(("begin", "Begin", ""),
+                                                                        ("end", "End", ""),
+                                                                        ("begin_data", "Begin (Data)", ""),
+                                                                        ("end_data", "End (Data)", "")))
     
     parameter = bpy.props.PointerProperty(type=Collection)
         
@@ -407,6 +414,14 @@ Collection.type = bpy.props.StringProperty()
 #   Render Properties                       #
 #                                           #
 #############################################
+
+RendermanSceneSettings.shellscript_create = bpy.props.BoolProperty(name="Create shell script", description="Create batchfile/shellscript to start rendering later", default=False)
+
+RendermanSceneSettings.shellscript_append = bpy.props.BoolProperty(name="Append", description="Append to existing file", default=False)
+
+RendermanSceneSettings.shellscript_file = bpy.props.StringProperty(name="Script File", description="Path to the script file", subtype="FILE_PATH")
+
+RendermanSceneSettings.bi_render = bpy.props.BoolProperty(name="Use BI Render Op", description="Use Blender's default render Operator(may crash more likely. Save often!)", default=True)
 
 passes.export = bpy.props.BoolProperty(name="Export", description="Export this Render Pass", default=True)
 

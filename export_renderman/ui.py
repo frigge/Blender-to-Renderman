@@ -623,6 +623,8 @@ def custom_code_layout(type_, context, layout):
                 parm = line.parameter
                 if type_ == "world":
                     row.prop(line, "world_position", text = "")
+                elif type_=="particles":
+                    row.prop(line, "particle_position", text="")
                 else:
                     row.prop(line, "position", text = "")
                 row = layout.row(align = True)
@@ -976,12 +978,30 @@ class Renderman_PT_Render(RenderButtonsPanel, bpy.types.Panel):
     COMPAT_ENGINES = {'RENDERMAN'}
     
     def draw(self, context):
+        rm = context.scene.renderman_settings
         layout = self.layout
-        row = layout.row()    
-        row.operator("renderman.render", text="Image", icon="RENDER_STILL")
-        row.operator("renderman.render", text="Animation", icon="RENDER_ANIMATION").anim = True
+        layout.prop(rm, "bi_render")
+        row = layout.row()
+        if rm.bi_render:
+            row.operator("render.render", text="Image", icon="RENDER_STILL")
+            row.operator("render.render", text="Animation", icon="RENDER_ANIMATION").animation = True
+        else:
+            row.operator("renderman.render", text="Image", icon="RENDER_STILL")
+            row.operator("renderman.render", text="Animation", icon="RENDER_ANIMATION").anim = True
         row = layout.row()
         row.prop(context.scene.renderman_settings, "exportallpasses")
+        row.prop(rm, "exportonly", text="Export Only")
+        if rm.exportonly:
+            row = layout.row()
+            row.prop(rm, "shellscript_create")
+            if rm.shellscript_create:
+                row = layout.row()
+                row.prop(rm, "shellscript_append")
+                row = layout.row()
+                row.prop(rm, "shellscript_file")
+                
+        row = layout.row()
+        row.prop(context.scene.render, "display_mode")
         row = layout.row()
         row.operator("renderman.maintain")
 
@@ -1168,7 +1188,6 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
             col.prop(scene.renderman_settings, "bakedir", text="Bakefiles")
             row = dir_box.row(align=True)
             row.prop(scene.renderman_settings, "framepadding", text="Frame Padding")
-            row.prop(scene.renderman_settings, "exportonly", text="Export Only")
             
         ## Custom Driver Options
         col = layout.column(align=True)                
@@ -1234,7 +1253,7 @@ class Renderman_PT_RIB_Structure(bpy.types.Panel, RenderButtonsPanel):
     
     COMPAT_ENGINES = {'RENDERMAN'}
     
-    def draw_archive_panel(self, layout, context, pa, name):
+    def draw_archive_panel(self, layout, context, pa, name, base=False):
         rm = context.scene.renderman_settings
         rs = rm.rib_structure
         p = eval('rs.'+pa)
@@ -1244,8 +1263,9 @@ class Renderman_PT_RIB_Structure(bpy.types.Panel, RenderButtonsPanel):
         row.prop(p, "expand", text = "", icon = "TRIA_DOWN" if p.expand else "TRIA_RIGHT", emboss=False)
         row.label(name)
         if p.expand:
-            row = mcol.row()
-            row.prop(p, "own_file", text="Export to own Archive")
+            if not base:
+                row = mcol.row()
+                row.prop(p, "own_file", text="Export to own Archive")
             row = mcol.row()
             row.enabled = p.own_file
             row.prop(p, "default_name")
@@ -1263,7 +1283,7 @@ class Renderman_PT_RIB_Structure(bpy.types.Panel, RenderButtonsPanel):
         lay = self.layout
         col = lay.column()
         frame_box = col.box()
-        if dap(frame_box, context, 'frame', 'Frame'):
+        if dap(frame_box, context, 'frame', 'Frame', base=True):
             pass_box = frame_box.box()
             
             if dap(pass_box, context, 'render_pass', "Passes"):
@@ -1277,7 +1297,7 @@ class Renderman_PT_RIB_Structure(bpy.types.Panel, RenderButtonsPanel):
                     dap(world_box, context, 'lights', 'Lights')
                     if dap(world_box, context, 'particles', 'Particle Systems'):
                         dap(world_box, context, "particle_data", 'Particle Data')
-            col.label("May be a child of Objects or Instances:")
+            frame_box.label("May be a child of Objects or Instances:")
             mesh_box = frame_box.box()
             dap(mesh_box, context, 'meshes', 'Meshes')
             
@@ -2466,7 +2486,10 @@ class Renderman_PT_particles_Attribute_Panel(bpy.types.Panel, ParticleButtonsPan
         scene = context.scene
         if context.particle_system:
             psystem = context.particle_system.name
-            attribute_panel_layout("particles"+obj+psystem+eval(rm).name, rm, layout, scene)
+            try:
+                attribute_panel_layout("particles"+obj+psystem+eval(rm).name, rm, layout, scene)
+            except IndexError:
+                layout.label("No Pass")
             
             
             
@@ -2479,7 +2502,7 @@ class Renderman_PT_particles_Custom_code_Panel(bpy.types.Panel, ParticleButtonsP
         layout = self.layout
         psystem = context.particle_system
         if psystem.settings.renderman:
-            custom_code_layout('particles', context, layout)
+            custom_code_layout("particles", context, layout)
         else:
             layout.label("No Render Pass")
 
