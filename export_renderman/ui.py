@@ -1316,13 +1316,17 @@ class Render_PT_RendermanPassesPanel(RenderButtonsPanel, bpy.types.Panel):
 
     def draw(self, context):
         scene = context.scene
-        #bpy.ops.renderman.maintain()
         renderman_settings = scene.renderman_settings
         layout = self.layout
+        
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
+            layout.label("No Render Pass")
+            return
+        
         row = layout.row()
         col = row.column(align=True)
-
-        active_pass = getactivepass(scene)
 
         if len(renderman_settings.passes) < 15:
             rows = len(renderman_settings.passes)+1
