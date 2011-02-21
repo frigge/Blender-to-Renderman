@@ -50,15 +50,11 @@ if "bpy" in locals():
     reload(ui)
     reload(export)
 else:
-    import export_renderman
-    import export_renderman.ops
-    from export_renderman.ops import *
-    import export_renderman.rm_maintain
-    from export_renderman.rm_maintain import *
-    import export_renderman.ui
-    from export_renderman.ui import *
-    import export_renderman.export
-    from export_renderman.export import *
+    from export_renderman import rm_props
+    from export_renderman import ops
+    from export_renderman import rm_maintain
+    from export_renderman import ui
+    from export_renderman import export
 
 import bpy
 import properties_render
@@ -493,13 +489,15 @@ class RendermanRender(bpy.types.RenderEngine):
 ##################################################################################################################################
 
 def register():
-    import export_renderman.rm_props
-    bpy.types.VIEW3D_MT_object_specials.append(draw_obj_specials_rm_menu)
+    rm_props.register()
+    bpy.utils.register_module(__name__)
+    bpy.types.VIEW3D_MT_object_specials.append(ui.draw_obj_specials_rm_menu)
     
     
 
 def unregister():
-    bpy.types.VIEW3D_MT_object_specials.remove(draw_obj_specials_rm_menu)
+    bpy.utils.unregister_module(__name__)
+    bpy.types.VIEW3D_MT_object_specials.remove(ui.draw_obj_specials_rm_menu)
 
 if __name__ == "__main__":
     register()

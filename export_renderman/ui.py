@@ -89,9 +89,10 @@ def matparm_menu(parm, mname, list_path, client):
             layout.label("Request Pass")
             passes_preset_layout(layout, context.scene, client=client, parm_path=list_path)
         
-    type(bpy.types.Menu)(mname, (bpy.types.Menu,), {"bl_label" : "Request Pass",
+    cls = type(bpy.types.Menu)(mname, (bpy.types.Menu,), {"bl_label" : "Request Pass",
                                                     "mclient" : client,
                                                     "draw" : draw_menu})
+    bpy.utils.register_class(cls)
 
 
 def matparmlayout(context, parmlist, layout, material, rm, shid, client=""):
@@ -304,8 +305,9 @@ def attribute_options(name, str_path, attr, grp):
     if not mname in dir(bpy.types) or mcount[mname] >= mcount_refresh:
         mcount[mname] = 0
         dbprint("recreating menu", mname, lvl=2, grp="attrui")
-        type(bpy.types.Menu)(mname, (bpy.types.Menu,), {"bl_label" : "",
+        cls = type(bpy.types.Menu)(mname, (bpy.types.Menu,), {"bl_label" : "",
                                                         "draw" : draw_attr_options})
+        bpy.utils.register_class(cls)
     return mname
 
 
@@ -411,10 +413,11 @@ def attribute_menu(name, path="", selected=False): ### create the attribute Menu
             groups = rman.attribute_groups
         for grp in groups:
             mname = grp.name+"add"+t
-            type(mtype)(mname, (mtype,), {  "bl_label" : grp.name, 
+            cls = type(mtype)(mname, (mtype,), {  "bl_label" : grp.name, 
                                             "grp_name" : grp.name, 
                                             "draw" : draw_attributes,
                                             "path" : path})
+            bpy.utils.register_class(cls)
             layout.menu(mname)
                                                                 
     ## Attributes 
@@ -441,21 +444,21 @@ def attribute_menu(name, path="", selected=False): ### create the attribute Menu
     ##create menus
     ##attribute groups
     mname = t+"_"+name     
-    if not mname in dir(bpy.types): 
-        type(mtype)(mname, (mtype,), {  "bl_label" : "New Attribute",
-                                        "draw" : draw_groups})
+    cls = type(mtype)(mname, (mtype,), {  "bl_label" : "New Attribute",
+                                    "draw" : draw_groups})
+    bpy.utils.register_class(cls)
     if name.find("Options") == -1:
         ##root menu
         mname = name+"_attribute_menu"
-        if not mname in dir(bpy.types):
-            type(mtype)(mname, (mtype,), {  "bl_label" : "",
-                                            "draw" : draw_root_menu})
+        cls = type(mtype)(mname, (mtype,), {  "bl_label" : "",
+                                        "draw" : draw_root_menu})
+        bpy.utils.register_class(cls)
     
         ## presets                                       
         mname = name+"_attributepresets"
-        if not mname in dir(bpy.types):
-            type(mtype)(mname, (mtype,), {  "bl_label" : "Presets",
-                                            "draw" : draw_menu})
+        cls = type(mtype)(mname, (mtype,), {  "bl_label" : "Presets",
+                                        "draw" : draw_menu})
+        bpy.utils.register_class(cls)
         
 def dimensions_layout(layout, rc, scene, env=False):
     col = layout.column(align = True)
@@ -501,9 +504,10 @@ def passes_preset_sub_menu(mname, prdir, client="", parm_path=""):
 
     if (not mname in dir(bpy.types)
         or getattr(bpy.types, mname).mclient != client):
-        type(bpy.types.Menu)(mname, (bpy.types.Menu,), { "bl_label" : os.path.split(prdir)[1],
+        cls = type(bpy.types.Menu)(mname, (bpy.types.Menu,), { "bl_label" : os.path.split(prdir)[1],
                                                         "mclient" : client,
                                                          "draw" : draw_menu })
+        bpy.utils.register_class(cls)
 
 def pass_preset_output_menu(mname, pr, parm_path, client):
     def draw_menu(self, context):
@@ -521,9 +525,10 @@ def pass_preset_output_menu(mname, pr, parm_path, client):
 
     if (not mname in dir(bpy.types)
         or getattr(bpy.types, mname).mclient != client):
-        type(bpy.types.Menu)(mname, (bpy.types.Menu,),{"bl_label" : pr,
+        cls = type(bpy.types.Menu)(mname, (bpy.types.Menu,),{"bl_label" : pr,
                                                        "mclient" : client,
                                                       "draw" : draw_menu})
+        bpy.utils.register_class(cls)
         
         
 def passes_preset_layout(layout, scene, preset_dir="", client="", parm_path=""):
