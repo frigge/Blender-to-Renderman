@@ -731,20 +731,20 @@ class World_PT_RendermanPassesPanel(WorldButtonsPanel, bpy.types.Panel):
         layout = self.layout
         row = layout.row()
         col = row.column(align=True)
-
-        active_pass = getactivepass(scene)
-        if active_pass:
-
-            if len(renderman_settings.passes) < 15:
-                rows = len(renderman_settings.passes)+1
-            else:
-                rows = 15
-        
-            col.template_list(renderman_settings, "passes", renderman_settings, "passes_index", rows=rows)
-            sub_row=col.row(align=True)    
-            sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")  
-        else:
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
             layout.label("No Render Pass")
+            return
+
+        if len(renderman_settings.passes) < 15:
+            rows = len(renderman_settings.passes)+1
+        else:
+            rows = 15
+    
+        col.template_list(renderman_settings, "passes", renderman_settings, "passes_index", rows=rows)
+        sub_row=col.row(align=True)    
+        sub_row.prop_search(renderman_settings, "searchpass", renderman_settings, "passes", icon='VIEWZOOM', text="")  
 
 class Renderman_PT_WorldPanel(WorldButtonsPanel, bpy.types.Panel):
     bl_label = "General World Settings"
@@ -754,21 +754,22 @@ class Renderman_PT_WorldPanel(WorldButtonsPanel, bpy.types.Panel):
     def draw(self, context):
         scene = context.scene
         layout = self.layout
-        active_pass = getactivepass(scene)
-        if active_pass:
-            row = layout.row()
-            col = row.column()
-            col.prop(active_pass, "exportobjects", text="Export All Objects")
-            col = row.column(align=True)
-            col.enabled = not active_pass.exportobjects
-            col.prop_search(active_pass, "objectgroup", bpy.data, "groups", text="")
-            row = layout.row()
-            row.prop(active_pass, "exportlights", text="Export All Lights")
-            col  = row.column()
-            col.enabled = not active_pass.exportlights
-            col.prop_search(active_pass, "lightgroup", bpy.data, "groups", text="", icon="LAMP")   
-        else:
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
             layout.label("No Render Pass")
+            return
+        row = layout.row()
+        col = row.column()
+        col.prop(active_pass, "exportobjects", text="Export All Objects")
+        col = row.column(align=True)
+        col.enabled = not active_pass.exportobjects
+        col.prop_search(active_pass, "objectgroup", bpy.data, "groups", text="")
+        row = layout.row()
+        row.prop(active_pass, "exportlights", text="Export All Lights")
+        col  = row.column()
+        col.enabled = not active_pass.exportlights
+        col.prop_search(active_pass, "lightgroup", bpy.data, "groups", text="", icon="LAMP")   
             
 class Renderman_PT_world_overrides(WorldButtonsPanel, bpy.types.Panel):
     bl_label="Overrides"
@@ -778,7 +779,11 @@ class Renderman_PT_world_overrides(WorldButtonsPanel, bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene =context.scene
-        apass = getactivepass(scene)
+        try:
+            apass = getactivepass(scene)
+        except IndexError:
+            layout.label("No Render Pass")
+            return
         layout.prop(apass, "override_shadingrate")
         row = layout.row()
         row.enabled = apass.override_shadingrate
@@ -822,27 +827,28 @@ class World_PT_SurfaceShaderPanel(bpy.types.Panel, WorldButtonsPanel):
     def draw(self, context):
         scene = context.scene
         #maintain(scene)
-        active_pass = getactivepass(scene)
         layout = self.layout
-        if active_pass:
-            shaders = context.scene.renderman_settings.shaders
-    
-            row = layout.row(align = True)
-            row.prop_search(active_pass.global_shader, "surface_shader", shaders, "surface_collection", text="", icon='MATERIAL')
-            row.operator("renderman.refreshshaderlist", text="", icon="FILE_REFRESH")
-            
-            layout.label(text=shader_info(active_pass.global_shader.surface_shader,
-                                          active_pass.global_shader.surface_shader_parameter,
-                                          scene))
-    
-            matparmlayout(context,
-                          active_pass.global_shader.surface_shader_parameter,
-                          layout,
-                          bpy.data,
-                          scene.renderman_settings,
-                          "ws"+active_pass.name)
-        else:
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
             layout.label("No Render Pass")
+            return
+        shaders = context.scene.renderman_settings.shaders
+
+        row = layout.row(align = True)
+        row.prop_search(active_pass.global_shader, "surface_shader", shaders, "surface_collection", text="", icon='MATERIAL')
+        row.operator("renderman.refreshshaderlist", text="", icon="FILE_REFRESH")
+        
+        layout.label(text=shader_info(active_pass.global_shader.surface_shader,
+                                      active_pass.global_shader.surface_shader_parameter,
+                                      scene))
+
+        matparmlayout(context,
+                      active_pass.global_shader.surface_shader_parameter,
+                      layout,
+                      bpy.data,
+                      scene.renderman_settings,
+                      "ws"+active_pass.name)
                             
 class World_PT_AtmosphereShaderPanel(bpy.types.Panel, WorldButtonsPanel):
     bl_label = "Atmosphere Shader"
@@ -852,28 +858,29 @@ class World_PT_AtmosphereShaderPanel(bpy.types.Panel, WorldButtonsPanel):
     def draw(self, context):
         scene = context.scene
         ##maintain(scene)
-        active_pass = getactivepass(scene)
         layout = self.layout
-        if active_pass:
-            shaders = context.scene.renderman_settings.shaders
-    
-            row = layout.row(align = True)
-            row.prop_search(active_pass.global_shader, "atmosphere_shader", shaders, "volume_collection", text="", icon='MATERIAL')
-            row.operator("renderman.refreshshaderlist", text="", icon="FILE_REFRESH")
-            
-            layout.label(text=shader_info(active_pass.global_shader.atmosphere_shader,
-                                          active_pass.global_shader.atmosphere_shader_parameter,
-                                          scene))
-            
-    
-            matparmlayout(context,
-                          active_pass.global_shader.atmosphere_shader_parameter,
-                          layout,
-                          bpy.data,
-                          scene.renderman_settings,
-                          "wa"+active_pass.name)
-        else:
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
             layout.label("No Render Pass")
+            return
+        shaders = context.scene.renderman_settings.shaders
+
+        row = layout.row(align = True)
+        row.prop_search(active_pass.global_shader, "atmosphere_shader", shaders, "volume_collection", text="", icon='MATERIAL')
+        row.operator("renderman.refreshshaderlist", text="", icon="FILE_REFRESH")
+        
+        layout.label(text=shader_info(active_pass.global_shader.atmosphere_shader,
+                                      active_pass.global_shader.atmosphere_shader_parameter,
+                                      scene))
+        
+
+        matparmlayout(context,
+                      active_pass.global_shader.atmosphere_shader_parameter,
+                      layout,
+                      bpy.data,
+                      scene.renderman_settings,
+                      "wa"+active_pass.name)
 
 
 class Renderman_PT_world_Attribute_Panel(bpy.types.Panel, WorldButtonsPanel):
@@ -884,7 +891,11 @@ class Renderman_PT_world_Attribute_Panel(bpy.types.Panel, WorldButtonsPanel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
-        active_pass = getactivepass(scene)
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
+            layout.label("No Render Pass")
+            return
         string = "bpy.context.scene.renderman_settings.passes"
         string += "["+string+"_index]"
         if active_pass:
@@ -1356,9 +1367,9 @@ class Renderman_PT_PassCamera(bpy.types.Panel, RenderButtonsPanel):
     
     def draw(self, context):
         #maintain(context.scene)
-        apass = getactivepass(context.scene)
         layout = self.layout
-        if apass:
+        try:
+            apass = getactivepass(context.scene)
             row = layout.row()
             row.prop_search(apass, "camera_object", context.scene, "objects", text = "Camera")
             row = layout.row()
@@ -1366,7 +1377,7 @@ class Renderman_PT_PassCamera(bpy.types.Panel, RenderButtonsPanel):
             if apass.camera_object != "" and apass.camera_object in context.scene.objects:
                 rc = apass.renderman_camera
                 dimensions_layout(layout, rc, context.scene, apass.environment)
-        else:
+        except IndexError:
             layout.label("No Render Pass")
 
 class Renderman_PT_QualityPanel(RenderButtonsPanel, bpy.types.Panel):
@@ -1377,9 +1388,9 @@ class Renderman_PT_QualityPanel(RenderButtonsPanel, bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
-        #maintain(scene)        
-        active_pass = getactivepass(scene)
-        if active_pass:
+        #maintain(scene)   
+        try:     
+            active_pass = getactivepass(scene)
             row = layout.row(align=True)
             row.prop(active_pass.pixelfilter, "filterlist", text="")
             row.prop(active_pass, "pixelsamples_x", text="X Samples")                                                                       
@@ -1389,7 +1400,7 @@ class Renderman_PT_QualityPanel(RenderButtonsPanel, bpy.types.Panel):
             row=layout.row(align=True)                            
             row.prop(active_pass.pixelfilter, "filterwidth", text = "Filter width")
             row.prop(active_pass.pixelfilter, "filterheight", text = "Filter height")
-        else:
+        except IndexError:
             layout.label("No Render Pass")
 
 class Renderman_PT_MotionBlurPanel(RenderButtonsPanel, bpy.types.Panel):
@@ -1401,8 +1412,8 @@ class Renderman_PT_MotionBlurPanel(RenderButtonsPanel, bpy.types.Panel):
         ##maintain()
         layout = self.layout
         scene = context.scene
-        current_pass = getactivepass(scene)
-        if current_pass:
+        try:
+            current_pass = getactivepass(scene)
             row = layout.row()
             row.prop(current_pass, "motionblur")
             row = layout.row(align = True)
@@ -1412,7 +1423,7 @@ class Renderman_PT_MotionBlurPanel(RenderButtonsPanel, bpy.types.Panel):
             else:
                 row.prop(current_pass, "shutterspeed_sec", text="seconds")
             row.prop(current_pass, "shutter_type", text="")
-        else:
+        except IndexError:
             layout.label("No Render Pass")
         
     
@@ -1857,23 +1868,24 @@ class RENDERMANMaterial_PT_MotionBlurPanel(MaterialButtonsPanel, bpy.types.Panel
     def draw(self, context):
         layout = self.layout
         ##maintain(context.scene)
-        apass = getactivepass(context.scene)
-        if apass:
-            m = context.material
-            try:
-                mat = m.renderman[m.renderman_index]
-                row = layout.row()
-                col = row.column(align=True)
-                row.enabled = apass.motionblur
-                col.prop(mat, "color_blur")
-                col.prop(mat, "opacity_blur")
-                col.prop(mat, "shader_blur")
-                col = row.column()
-                col.prop(mat, "motion_samples")
-            except IndexError:
-                layout.label("No Material Pass")
-        else:
+        try:
+            apass = getactivepass(context.scene)
+        except IndexError:
             layout.label("No Render Pass")
+            return
+        m = context.material
+        try:
+            mat = m.renderman[m.renderman_index]
+            row = layout.row()
+            col = row.column(align=True)
+            row.enabled = apass.motionblur
+            col.prop(mat, "color_blur")
+            col.prop(mat, "opacity_blur")
+            col.prop(mat, "shader_blur")
+            col = row.column()
+            col.prop(mat, "motion_samples")
+        except IndexError:
+            layout.label("No Material Pass")
 
 class Renderman_OT_set_diffuse_color(bpy.types.Operator):
     bl_label = "set diffuse color"
@@ -2135,8 +2147,8 @@ class Renderman_PT_light_Attribute_Panel(bpy.types.Panel, LightDataButtonsPanel)
         path += "["+path+"_index]"
         layout = self.layout
         scene = context.scene
-        active_pass = getactivepass(scene)
         try:
+            active_pass = getactivepass(scene)
             if active_pass and lamp.data.renderman:
                 attribute_panel_layout("light"+lamp.name+eval(path).name, path, layout, scene)
         except IndexError:
@@ -2182,19 +2194,20 @@ class Object_PT_MotionBlurPanel(ObjectButtonsPanel, bpy.types.Panel):
         try:
             rman = obj.renderman[obj.renderman_index]
         except IndexError:
-            pass
+            return
     
         layout = self.layout
-        apass = getactivepass(scene)
-        if apass:
-            row = layout.row()
-            col = row.column()
-            col.enabled = getactivepass(scene).motionblur
-            col.prop(rman, "transformation_blur")
-            col.prop(rman, "deformation_blur")
-            col.prop(rman, "motion_samples")
-        else:
+        try:
+            apass = getactivepass(scene)
+        except IndexError:
             layout.label("No Render Pass")
+            return
+        row = layout.row()
+        col = row.column()
+        col.enabled = getactivepass(scene).motionblur
+        col.prop(rman, "transformation_blur")
+        col.prop(rman, "deformation_blur")
+        col.prop(rman, "motion_samples")
 
 class Mesh_PT_IlluminatePanel(ObjectButtonsPanel, bpy.types.Panel):
     bl_label="Renderman Light Linking"
@@ -2238,9 +2251,12 @@ class Renderman_PT_object_Attribute_Panel(bpy.types.Panel, ObjectButtonsPanel):
         layout = self.layout
         obj = context.object
         scene = context.scene
-        active_pass = getactivepass(scene)
-        if active_pass:
-            attribute_panel_layout("object"+obj.name+eval(path).name, path, layout, scene)             
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
+            layout.label("No Render Pass")
+            return
+        attribute_panel_layout("object"+obj.name+eval(path).name, path, layout, scene)             
 
 class Mesh_PT_GeneralSettings(ObjectButtonsPanel, bpy.types.Panel):
     bl_label ="General Settings"
@@ -2336,45 +2352,43 @@ class Camera_PT_dimensions(bpy.types.Panel, CameraDataButtonsPanel):
         cam = camera.data
         scene = context.scene
         layout = self.layout
-        apass = getactivepass(scene)
-        if apass:
-            rc = apass.renderman_camera
-            dimensions_layout(layout, rc, scene)
-            row = layout.row()
-            row.prop(rc, "depthoffield", text="Depth Of Field")
-            row = layout.row()
-            row.enabled = rc.depthoffield
-            cola = row.column(align=True)
-            cola.prop(rc, "dof_distance", text="Focus Distance")
-            cola.prop(rc, "fstop")
-            cola.prop(rc, "use_lens_length")
-            row = layout.row()
-            row.enabled = rc.depthoffield and not rc.use_lens_length
-            row.prop(rc, "focal_length")
-    
-            row = layout.row(align=True)
-            row.prop(cam, "type", text="")
-    
-            row.prop(cam, "lens_unit", text = "")
-            if cam.lens_unit == "MILLIMETERS":
-                row.prop(cam, "lens", text="")
-            else:
-                row.prop(cam, "angle", text="")
-                
-            row = layout.row()
-            col = row.column()
-            col.enabled = getactivepass(scene).motionblur
-            col.prop(camera.renderman[camera.renderman_index], "transformation_blur")
-            #col.prop(camera.renderman[camera.renderman_index], "perspective_blur")
-            row = col.row()
-            transformation_blur = camera.renderman[camera.renderman_index].transformation_blur
-            row.enabled = transformation_blur
-            row.prop(camera.renderman[camera.renderman_index], "motion_samples") 
-        else:
-            layout.label("No Render Pass")         
-                
+        try:
+            apass = getactivepass(scene)
+        except IndexError:
+            layout.label("No Render Pass")
+            return
+        rc = apass.renderman_camera
+        dimensions_layout(layout, rc, scene)
+        row = layout.row()
+        row.prop(rc, "depthoffield", text="Depth Of Field")
+        row = layout.row()
+        row.enabled = rc.depthoffield
+        cola = row.column(align=True)
+        cola.prop(rc, "dof_distance", text="Focus Distance")
+        cola.prop(rc, "fstop")
+        cola.prop(rc, "use_lens_length")
+        row = layout.row()
+        row.enabled = rc.depthoffield and not rc.use_lens_length
+        row.prop(rc, "focal_length")
 
-#passes_linking_panel("camera", "bpy.context.object", CameraDataButtonsPanel)
+        row = layout.row(align=True)
+        row.prop(cam, "type", text="")
+
+        row.prop(cam, "lens_unit", text = "")
+        if cam.lens_unit == "MILLIMETERS":
+            row.prop(cam, "lens", text="")
+        else:
+            row.prop(cam, "angle", text="")
+            
+        row = layout.row()
+        col = row.column()
+        col.enabled = getactivepass(scene).motionblur
+        col.prop(camera.renderman[camera.renderman_index], "transformation_blur")
+        #col.prop(camera.renderman[camera.renderman_index], "perspective_blur")
+        row = col.row()
+        transformation_blur = camera.renderman[camera.renderman_index].transformation_blur
+        row.enabled = transformation_blur
+        row.prop(camera.renderman[camera.renderman_index], "motion_samples")  
     
 
 class Renderman_PT_CameraLens(CameraDataButtonsPanel, bpy.types.Panel):
@@ -2453,33 +2467,32 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
     
     def draw(self, context):
         scene = context.scene
-        active_pass = getactivepass(scene)
         layout = self.layout
-        if active_pass:
-            shaders = context.scene.renderman_settings.shaders
-            
-            psystem = context.particle_system
-            obj = context.object
-            if psystem.settings.renderman:
-                rman = psystem.settings.renderman[psystem.settings.renderman_index]
-        
-                row = layout.row()
-                
-                row.prop(rman, "material_slot")
-                    
-                layout.prop(rman, "render_type")
-                if rman.render_type == "Object":
-                    psystem.settings.render_type = 'OBJECT'
-                    if rman.object in scene.objects:
-                        psystem.settings.dupli_object = scene.objects[rman.object]
-                    layout.prop_search(rman, "object", scene, "objects")
-                elif rman.render_type == "Archive":
-                    layout.prop(rman, "archive")
-                elif rman.render_type == "Group":
-                    layout.prop_search(rman, "group", bpy.data, "groups")
-        else:
+        try:
+            active_pass = getactivepass(scene)
+        except IndexError:
             layout.label("No Render Pass")
-
+        shaders = context.scene.renderman_settings.shaders
+        
+        psystem = context.particle_system
+        obj = context.object
+        if psystem.settings.renderman:
+            rman = psystem.settings.renderman[psystem.settings.renderman_index]
+    
+            row = layout.row()
+            
+            row.prop(rman, "material_slot")
+                
+            layout.prop(rman, "render_type")
+            if rman.render_type == "Object":
+                psystem.settings.render_type = 'OBJECT'
+                if rman.object in scene.objects:
+                    psystem.settings.dupli_object = scene.objects[rman.object]
+                layout.prop_search(rman, "object", scene, "objects")
+            elif rman.render_type == "Archive":
+                layout.prop(rman, "archive")
+            elif rman.render_type == "Group":
+                layout.prop_search(rman, "group", bpy.data, "groups")
 
 ### Attributes
 class Renderman_PT_particles_Attribute_Panel(bpy.types.Panel, ParticleButtonsPanel):
