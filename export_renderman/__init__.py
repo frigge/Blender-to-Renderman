@@ -52,9 +52,12 @@ if "bpy" in locals():
 else:
     from export_renderman import rm_props
     from export_renderman import ops
+    from export_renderman.ops import *
     from export_renderman import rm_maintain
+    from export_renderman.rm_maintain import *
     from export_renderman import ui
     from export_renderman import export
+    from export_renderman.export import *
 
 import bpy
 import properties_render
