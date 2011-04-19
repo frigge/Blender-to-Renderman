@@ -1,6 +1,6 @@
 
 # Blender 2.5 or later to Renderman Exporter
-# Author: Sascha Fricke
+# Copyright (C) 2011 Sascha Fricke
 
 #############################################################################
 #                                                                           #
@@ -93,13 +93,6 @@ class Archive():    # if specified open a new archive
     set_parent_active() which will make the parent of the active archive the new
     active archive.
     '''
-
-    data_path = None    # path to datablock
-    parent_archive = None   # store its parent
-    filepath = ""
-    scene = None
-    frame = None
-    rs = None   # path to rib_structure properties
     def __init__(self,
                  data_path=None,
                  parent_archive=None,
@@ -163,7 +156,7 @@ class Archive():    # if specified open a new archive
         pname =""
         if type in ["Particle System", "Particle Data"]:
             prop_path = data_path.settings
-        elif type == "LAMP" and data_path.data.rna_type.name == 'LAMP':
+        elif type == "LAMP" and data_path.type == 'LAMP':
             prop_path = data_path.data
         else:
             prop_path = data_path
@@ -177,6 +170,7 @@ class Archive():    # if specified open a new archive
             dbprint("trying to get linked pass for this object", lvl=2, grp="archive")
             lp = linked_pass(prop_path, current_pass)
             if lp == None:
+                print("yo", prop_path.name, type)
                 return
             pname = lp.name
             dbprint("linked pass is", pname, lvl=2, grp="archive")
@@ -509,45 +503,62 @@ def writeSettings(camrot):
         nodisplay = False
                 
     if current_pass.name == "Beauty" and not current_pass.displaydrivers:
-        adddisp(current_pass)
+        adddisp(current_pass, scene=scene)
     render = scene.render
    
-    camera = scene.objects[current_pass.camera_object]
-    rc = current_pass.renderman_camera
-
-    nearclipping = rc.near_clipping
-    farclipping = rc.far_clipping
-    shift_x = rc.shift_x * 2
-    shift_y = rc.shift_y * 2
-    
-    resx = int(rc.resx * rc.respercentage)*0.01
-    resy = int(rc.resy * rc.respercentage)*0.01
-
-    x = rc.resx * rc.aspectx
-    y = rc.resy * rc.aspecty
-   
-    if x >= y:
-        asp_y = y/x
-        asp_x = 1.0
+    if current_pass.camera_object == "":
+        camobj = scene.camera.name
     else:
-        asp_x = x/y
-        asp_y = 1.0
+        camobj = current_pass.camera_object
+    camera = scene.objects[camobj]
+    rc = camera.renderman_camera
+    if camera.type == "CAMERA":
+        nearclipping = camera.data.clip_start
+        farclipping = camera.data.clip_end
+        shift_x = camera.data.shift_x * 2
+        shift_y = camera.data.shift_y * 2
+        
+        resx = int(render.resolution_x * render.resolution_percentage)*0.01
+        resy = int(render.resolution_y * render.resolution_percentage)*0.01
 
-    aspectratio = rc.aspectx/rc.aspecty
-
-    left = str(-asp_x+shift_x)
-    right = str(asp_x+shift_x)
-
-    top = str(-asp_y+shift_y)
-    bottom = str(asp_y+shift_y)
-
-    if rc.depthoffield:
-        dof_distance = rc.dof_distance
-        if rc.use_lens_length:
-            focal_length = scene.camera.data.lens/100 # TODO: store lens data in rc
+        x = render.resolution_x * render.pixel_aspect_x
+        y = render.resolution_y * render.pixel_aspect_y
+       
+        if x >= y:
+            asp_y = y/x
+            asp_x = 1.0
         else:
-            focal_length = rc.focal_length
-        fstop = rc.fstop
+            asp_x = x/y
+            asp_y = 1.0
+
+        aspectratio = render.pixel_aspect_x/render.pixel_aspect_y
+
+        left = str(-asp_x+shift_x)
+        right = str(asp_x+shift_x)
+
+        top = str(-asp_y+shift_y)
+        bottom = str(asp_y+shift_y)
+
+        if rc.depthoffield:
+            dof_distance = rc.dof_distance
+            if rc.use_lens_length:
+                focal_length = scene.camera.data.lens/100
+            else:
+                focal_length = rc.focal_length
+            fstop = rc.fstop
+    else:
+        left = "-1"
+        right = "1"
+        top = "-1"
+        bottom = "1"
+        resx = resy = rc.res
+        aspectratio = "1"
+        if camera.type == "LAMP":
+            nearclipping = camera.data.shadow_buffer_clip_start
+            farclipping = camera.data.shadow_buffer_clip_end
+        else:
+            near_clipping = rc.nearclipping
+            far_clipping = rc.farclipping
 
 ## custom code
     write_custom_code(current_pass.scene_code, "begin")
@@ -592,7 +603,7 @@ def writeSettings(camrot):
         ribnl()
 
 ### Format
-    rib_apnd('Format', str(resx) +' '+ str(resy) +' '+ str(aspectratio))
+    rib_apnd('Format', str(int(resx)) +' '+ str(int(resy)) +' '+ str(aspectratio))
 
 ### ScreenWindow
     rib_apnd('ScreenWindow', left +' '+ right +' '+ top +' '+ bottom)
@@ -602,7 +613,7 @@ def writeSettings(camrot):
 
 ### DepthOfField
     dbprint(current_pass.camera_object, lvl=2, grp="Settings")
-    if current_pass.camera_object == "" and scene.camera.data.depthoffield:
+    if current_pass.camera_object == "" and rc.depthoffield:
         rib_apnd('DepthOfField', str(fstop)+' '+str(focal_length)+' '+str(dof_distance))
 
 ### PixelFilter
@@ -745,7 +756,7 @@ def writeCamera(cam, camrot):
                 perspective = True
             elif cam.data.type == 'POINT':
                 perspective = True
-                fov = "90"
+                fov = cam.renderman_camera.fov
             elif cam.data.type == 'SUN':
                 perspective = False
         else:
@@ -780,7 +791,7 @@ def writeCamera(cam, camrot):
         
     ##Camera Transformation Blur
 
-    ts = current_pass.renderman_camera.transformation_blur
+    ts = cam.renderman_camera.transformation_blur
     if ts and current_pass.motion_blur:
         for t in ["RotX", "RotY", "RotZ", "Translate"]:
             motionblur( linked_pass(cam, current_pass),
@@ -849,7 +860,7 @@ def writeWorld():
                     lp = linked_pass(m, current_pass)
                     if lp != None and lp.arealight_shader != "":
                         al = True
-            if light.type == 'LAMP' or al:
+            if light.type == 'LAMP' or al and linked_pass(light.data, current_pass) != None:
                 rib_apnd('Illuminate', '"'+light.name+'"', 1)
         
     ribnl()
@@ -863,7 +874,9 @@ def writeWorld():
                 writeParticles(obj)
     
     ## custom code
+    print("kommst du hier an ?")
     write_custom_code(current_pass.world_code, "end_inside", type_="World")
+    print("und hier ??")
     rib_apnd("WorldEnd")
     write_custom_code(current_pass.world_code, "end_outside", type_="World")
 
@@ -1213,6 +1226,10 @@ def writeObject(obj):
             if obj.parent:
                 rib_apnd('#child of '+obj.parent.name)
             rib_apnd("AttributeBegin")
+            
+            for light in obj_pass.lightlist:
+                rib_apnd('Illuminate', 0)
+                
             rib_apnd('Attribute',  '"identifier"',  '"name"', '["'+obj.name+'"]')
             write_attrs_or_opts(obj_pass.attribute_groups, "Attribute", "")
                 
@@ -1256,7 +1273,7 @@ def writeMesh(mesh):
     dbprint("This Polygon Object is a", ptype, grp="Export", lvl=2)
 
     #Apply Modifiers
-    export_mesh = mesh.create_mesh(scene, True, 'RENDER')
+    export_mesh = mesh.to_mesh(scene, True, 'RENDER')
     dbprint("apllied modifiers:", export_mesh, lvl=2, grp="Export")
     
     
@@ -1413,7 +1430,11 @@ def export(rpass, scene):
         direction = ""
         
     else:
-        camera = scene.objects[current_pass.camera_object]
+        if current_pass.camera_object == "":
+            camobj = scene.camera.name
+        else:
+            camobj = current_pass.camera_object
+        camera = scene.objects[camobj]
         rot = camera.rotation_euler
                         
         camrot = [degrees(rot[0]), degrees(rot[1]), degrees(rot[2])]    

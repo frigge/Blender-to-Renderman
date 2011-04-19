@@ -1,6 +1,6 @@
 
 #Blender 2.5 or later to Renderman Exporter
-#Author: Sascha Fricke
+# Copyright (C) 2011 Sascha Fricke
 
 
 
@@ -60,7 +60,6 @@ else:
     from export_renderman.export import *
 
 import bpy
-import properties_render
 import os
 import subprocess
 import math
@@ -68,16 +67,19 @@ import mathutils
 import tempfile
 import time
 
+import threading
+
 ##################################################################################################################################
 
-import properties_data_mesh
-import properties_data_camera
-import properties_data_lamp
-import properties_texture
-import properties_particle
+from bl_ui import properties_data_mesh
+from bl_ui import properties_data_camera
+from bl_ui import properties_data_lamp
+from bl_ui import properties_texture
+from bl_ui import properties_particle
+from bl_ui import properties_render
 
 #properties_render.RENDER_PT_render.COMPAT_ENGINES.add('RENDERMAN')
-#properties_render.RENDER_PT_dimensions.COMPAT_ENGINES.add('RENDERMAN')
+properties_render.RENDER_PT_dimensions.COMPAT_ENGINES.add('RENDERMAN')
 #properties_render.RENDER_PT_output.COMPAT_ENGINES.add('RENDERMAN')
 #properties_render.RENDER_PT_post_processing.COMPAT_ENGINES.add('RENDERMAN')
 properties_data_mesh.DATA_PT_context_mesh.COMPAT_ENGINES.add('RENDERMAN')
@@ -293,13 +295,13 @@ update_counter = 0
 class RendermanRender(bpy.types.RenderEngine):
     bl_idname = 'RENDERMAN'
     bl_label = "Renderman"
-    bl_use_preview = True
+    #bl_use_preview = True
     update = 50
     
     def rm_start_render(self, render, ribfile, current_pass, scene):
-        rc = current_pass.renderman_camera
-        x = int(rc.resx * rc.respercentage)*0.01
-        y = int(rc.resy * rc.respercentage)*0.01
+        rd = scene.render
+        x = int(rd.resolution_x * rd.resolution_percentage)*0.01
+        y = int(rd.resolution_y * rd.resolution_percentage)*0.01
         
         self.update_stats("", "Render ... "+current_pass.name)
     
@@ -381,6 +383,17 @@ class RendermanRender(bpy.types.RenderEngine):
             except SystemError:
                 pass
 
+    def check_objects(self, scene):
+        abort = False
+        for obj in scene.objects:
+            if obj.type == "LAMP" and len(obj.data.renderman) == 0:
+                self.update_stats("", "Light: "+obj.name+" has no Render Pass, cancel Rendering ...")
+                abort = True
+            elif obj.type == "MESH" and len(obj.renderman) == 0:
+                self.update_stats("", "Object: "+obj.name+"has nor Render Pass, cancel Rendering ...")
+                abort = True
+        return abort
+
     def render(self, scene):
         rm = scene.renderman_settings
         rs = rm.rib_structure
@@ -432,7 +445,9 @@ class RendermanRender(bpy.types.RenderEngine):
             update_image(img)
 
             
-        else:        
+        else:
+            if self.check_objects(scene):
+                return
             rndr = scene.renderman_settings.renderexec
             if rndr == "":
                 return
@@ -490,17 +505,20 @@ class RendermanRender(bpy.types.RenderEngine):
 
 
 ##################################################################################################################################
+maintainthread = None
 
 def register():
     rm_props.register()
     bpy.utils.register_module(__name__)
     bpy.types.VIEW3D_MT_object_specials.append(ui.draw_obj_specials_rm_menu)
-    
-    
+    bpy.types.INFO_MT_add.append(ui.draw_rm_add_light)
+    #threaded_maintaining()
 
 def unregister():
     bpy.utils.unregister_module(__name__)
     bpy.types.VIEW3D_MT_object_specials.remove(ui.draw_obj_specials_rm_menu)
+    bpy.types.INFO_MT_add.remove(ui.draw_rm_add_light)
+    #stop_maintaining()
 
 if __name__ == "__main__":
     register()

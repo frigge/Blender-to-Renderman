@@ -1,6 +1,6 @@
 
 #Blender 2.5 or later to Renderman Exporter
-#Author: Sascha Fricke
+# Copyright (C) 2011 Sascha Fricke
 
 
 
@@ -132,14 +132,29 @@ class ExecuteRendermanPreset(bpy.types.Operator): ### modified Blenders internal
 #        # change the menu title to the most recently chosen option
 #        preset_class = getattr(bpy.types, self.menu_idname)
 #        preset_class.bl_label = self.preset_name
+        scene = context.scene
 
-        context.scene.renderman_settings.active_engine = os.path.split(self.filepath)[1].replace(".py", "")
+        scene.renderman_settings.active_engine = os.path.split(self.filepath)[1].replace(".py", "")
 
         # execute the preset using script.python_file_run
         clear_collections(context.scene)
         for rpass in context.scene.renderman_settings.passes:
             rpass.hider = ""
         bpy.ops.script.python_file_run(filepath=self.filepath)
+        pathcoll = scene.renderman_settings.shaders
+
+        if pathcoll.shaderpaths and not pathcoll.shadercollection:
+            checkshadercollection(scene)
+
+        initial_load_data(scene)
+
+        passes = scene.renderman_settings.passes
+        maintain_beauty_pass(scene)
+        maintain_hiders(passes[0], scene)
+        maintain_searchpaths(passes[0], scene)
+        
+        maintain_lists(scene)
+        maintain_rib_structure(scene) 
         return {'FINISHED'}
 
 
@@ -366,7 +381,10 @@ class AddAttributePreset(bpy.types.Operator):
             layout.prop(g, "preset_include", text=g.name)
             
             for a in g.attributes:
-                layout.prop(a, "preset_include", text="- "+a.name)
+                row =layout.row()
+                if not g.preset_include:
+                    row.enabled = False
+                row.prop(a, "preset_include", text="- "+a.name)
         layout.prop(renderman_settings, "presetname")
         
     def execute(self, context):
@@ -588,15 +606,20 @@ class Renderman_OT_LightLinking(bpy.types.Operator):
     def invoke(self, context, event):
         scene = context.scene
         obj = context.object
-        for item in obj.renderman[obj.renderman_index].light_list:
-            type = self.type
-            if type == "invert":
-                item.illuminate = not item.illuminate 
-            elif type == "all":
-                item.illuminate = True 
-            elif type == "none":
-                item.illuminate = False 
-
+        light_list = obj.renderman[obj.renderman_index].lightlist
+        if self.type == "invert":
+            for light in getLightList(scene):
+                if light in light_list:
+                    light_list.remove(light_list.keys().index(light))
+                else:
+                    light_list.add().name = light
+        if self.type == "all":
+            for light in getLightList(scene):
+                if not light in light_list:
+                    light_list.add().name = light
+        elif type == "none":
+            for l in light_list:
+                light_list.remove(0)
         return {'FINISHED'}
 
 #############################################
@@ -605,7 +628,7 @@ class Renderman_OT_LightLinking(bpy.types.Operator):
 #                                           #
 #############################################
 
-def adddisp(active_pass, name = "Default", display="framebuffer", var="rgba", is_aov=False, aov=""):
+def adddisp(active_pass, name = "Default", display="framebuffer", var="rgba", is_aov=False, aov="", scene=None):
     defcount = 1
 
     def getdefname(name, count):
@@ -626,6 +649,10 @@ def adddisp(active_pass, name = "Default", display="framebuffer", var="rgba", is
     dispdriver.var = var
     dispdriver.is_aov = is_aov
     dispdriver.aov = aov
+    maintain_display_drivers(active_pass, scene)
+    check_displaydrivers(scene) 
+    check_display_variables(scene)
+    maintain_display_options(active_pass, scene.renderman_settings)
     return defname
 
 class Renderman_OT_addDisplay(bpy.types.Operator):
@@ -634,7 +661,7 @@ class Renderman_OT_addDisplay(bpy.types.Operator):
     bl_description = "add Display Driver"
     
     def invoke(self, context, event):
-        adddisp(getactivepass(context.scene))
+        adddisp(getactivepass(context.scene), scene=context.scene)
         return {'FINISHED'}
 
 class Renderman_OT_removeDisplay(bpy.types.Operator):
@@ -820,29 +847,6 @@ class Renderman_OT_writePassPreset(bpy.types.Operator):
         w(['exportanimation'])
         file.write('##\n\n')
         
-        #Dimensions
-        file.write('##Dimensions\n')
-        rc='renderman_camera.'
-        w([rc+'respercentage',
-           rc+'resx',
-           rc+'resy',
-           rc+'aspectx',
-           rc+'aspecty',
-           rc+'square',
-           rc+'shift_x',
-           rc+'shift_y',
-           rc+'fov',
-           rc+'depthoffield',
-           rc+'dof_distance',
-           rc+'focal_length',
-           rc+'fstop',
-           rc+'use_lens_length',
-           rc+'perspective_blur',
-           rc+'transformation_blur',
-           rc+'near_clipping',
-           rc+'far_clipping'])
-        file.write('##\n\n')
-        
         ## Options
         file.write('##Options\n')
         write_grp_preset(active_pass, "opt", file.write)
@@ -1002,6 +1006,8 @@ class Renderman_OT_writePassPreset(bpy.types.Operator):
 def invoke_preset(rpass, preset, scene):
     rm = scene.renderman_settings
     active_engine = rm.active_engine
+    maintain_hiders(rpass, scene)
+    maintain_searchpaths(rpass, scene)
     main_preset_path = bpy.utils.preset_paths('renderman')[0]
     sub_preset_path = os.path.join(main_preset_path, active_engine)
     
@@ -1052,8 +1058,7 @@ def invoke_preset(rpass, preset, scene):
                     '##Export Objects\n', 
                     '##Export Lights\n', 
                     '##Animate Pass\n',
-                    '##ImageFolder\n',
-                    '##Dimensions\n']:
+                    '##ImageFolder\n']:
             eval_preset(i, lines)
             
         elif line == '##World Shaders\n':
@@ -1181,6 +1186,9 @@ class Renderman_OT_delete_request(bpy.types.Operator):
             parm = eval("client."+req.name)
             client.requests.remove(self.r)
             parm.textparameter = ""
+
+            for rpass in context.scene.renderman_settings.passes:
+                maintain_client_passes_remove(rpass, context.scene)
         return {'FINISHED'}
 
 class Renderman_OT_requestPresetPass(bpy.types.Operator):
@@ -1246,6 +1254,8 @@ class Renderman_OT_requestPresetPass(bpy.types.Operator):
                 addreq(client_path)
         else:
             addreq(self.client_path)
+
+        maintain_client_passes_add(context.object, scene)
         
         return {'FINISHED'}
         
@@ -1307,6 +1317,7 @@ class Renderman_OT_addPass(bpy.types.Operator):
     
     def invoke(self, context, event):
         scene = context.scene
+        rm = scene.renderman_settings
         passes = eval(self.path)
         name = "Default"
         defcount = 1
@@ -1316,6 +1327,13 @@ class Renderman_OT_addPass(bpy.types.Operator):
                 defcount += 1
                 defname = name + "0"*(2 - len(str(defcount))) + str(defcount)
         passes.add().name = defname
+        if passes == rm.passes:
+            maintain_hiders(passes[defname], scene)
+            maintain_searchpaths(passes[defname], scene)
+        else:
+            if len(passes) == 1:
+                bpy.ops.renderman.link_pass(path=self.path, rpass=rm.passes[0].name)
+        maintain_rib_structure(scene) 
         return{'FINISHED'}
 
 class Renderman_OT_movepass(bpy.types.Operator):
@@ -1767,6 +1785,34 @@ class Renderman_OT_set_attr_group_default(bpy.types.Operator):
 #                                           #
 #############################################
 
+class Renderman_OT_lightLinking_refresh(bpy.types.Operator):
+    bl_label  =""
+    bl_idname = "renderman.lightlinking_refresh"
+    bl_description = ""
+
+    def invoke(self, context, event):
+        scene = context.scene
+        maintain_lists(scene)
+        update_illuminate_list(context.object, scene)
+        return{'FINISHED'}
+        
+class Renderman_OT_LinkLight(bpy.types.Operator):
+    bl_label="Link Light"
+    bl_idname="renderman.link_light"
+    bl_description="Link Light to this Object"
+    
+    light = bpy.props.StringProperty()
+    
+    def invoke(self, context, event):
+        obj = context.object
+        rm = obj.renderman[obj.renderman_index]
+        if not self.light in rm.lightlist:
+            rm.lightlist.add().name=self.light
+        else:
+            lightlist = rm.lightlist.keys()
+            rm.lightlist.remove(lightlist.index(self.light))
+        return {'FINISHED'}
+
 class Renderman_OT_LightLinking_selected(bpy.types.Operator):
     bl_label = "Link Lights"
     bl_idname = "renderman.light_linking"
@@ -1779,27 +1825,33 @@ class Renderman_OT_LightLinking_selected(bpy.types.Operator):
     
     def invoke(self, context, event):
         t = self.type
-        lights = []
-        for l in context.scene.objects:
+        selected_lights = []
+        for l in context.scene.selected_objects:
             al = False
             if l.active_material:
                 for rm in l.active_material.renderman:
                     if rm.arealight_shader != '':
                         al = True
-            if (l.type == 'LAMP' or al) and l.select: ## if it's selected and a lamp or an arealight, add to lights list
-                lights.append(l.name)
+            if (l.type == 'LAMP' or al):
+                selected_lights.append(l.name)
                 
         for obj in context.scene.objects:
-            if obj.type in ["MESH"] and obj.select:
-                for l in obj.renderman[obj.renderman_index].light_list:
-                    if l.name in lights:    ##this light is selected
-                        if t in ["add", "exclusive"]:
-                            l.illuminate = True
-                        elif t == "remove":
-                            l.illuminate = False
-                    else: ## this isn't slected
-                        if t == "exclusive":
-                            l.illuminate = False
+            if obj.type == "LAMP":
+                continue
+
+            lightlist = obj.renderman[obj.renderman_index]
+            for l in getLightList(context.scene):
+                if l.name in selected_lights:
+                    if t in ["add", "exclusive"]:
+                        if not l.name in lightlist:
+                            lightlist.add().name = l.name
+                    elif t == "remove":
+                        if l.name in lightlist:
+                            lightlist.remove(lightlist.keys().index(l.name))
+                else: ## this isn't slected
+                    if t == "exclusive":
+                        if l.name in lightlist:
+                            lightlist.remove(lightlist.keys().index(l.name))
         return {'FINISHED'}
 
         
@@ -1941,26 +1993,93 @@ class Renderman_OT_addpass_selected(bpy.types.Operator):
     bl_label="add new Pass"
     bl_idname="renderman.add_pass_selected"
     bl_description="add new pass to selected objects"
+    bl_options = {'REGISTER'}
     
-    name = bpy.props.StringProperty()
+    name = bpy.props.StringProperty(options={'HIDDEN'})
+    defname = bpy.props.BoolProperty(name="Default Name", default=True)
+    linking = bpy.props.EnumProperty(name="Linking", items=(("all", "All", ""),
+                                                            ("none", "None", ""),
+                                                            ("active", "Active", ""),
+                                                            ("selected", "Selected", "")),
+                                                    default="all")
     
     def draw(self, context):
-        self.layout.prop(self, "name")
+        layout = self.layout
+        layout.prop(self, "defname")
+        layout.prop(self, "name", text="Name")
+        layout.prop(self, "linking")
+        for rpass in context.scene.renderman_settings.passes:
+            layout.prop(rpass, "linkToMe", text=rpass.name)
+        
+        
         
     def invoke(self, context, event):
         wm = context.window_manager
         return wm.invoke_props_dialog(self)
         
     def execute(self, context):
-        for obj in context.scene.objects:
+        for obj in context.selected_objects:
             if obj.type == "LAMP":
                 rm = obj.data.renderman
             else:
                 rm = obj.renderman
-            if obj.select:
+
+            if self.defname:
+                name = "Default"
+                defcount = 1
+                defname = "Default01"
+                for item in rm:
+                    if item.name == defname:
+                        defcount += 1
+                        defname = name + "0"*(2 - len(str(defcount))) + str(defcount)
+                rm.add().name = defname
+                newpass = rm[defname]
+            else:
                 rm.add().name=self.name
+                newpass = rm[self.name]
+
+            if self.linking == "all":
+                for rpass in context.scene.renderman_settings.passes:
+                    newpass.links.add().name = rpass.name
+            elif self.linking == "active":
+                rpass = getactivepass(context.scene)
+                if rpass != None:
+                    rm.links.add().name = rpass.name
+            elif self.linking == "selected":
+                for rpass in context.scene.renderman_settings.passes:
+                    if rpass.linkToMe:
+                        rm.links.add().name = rpass.name
+
+            if obj.type == "LAMP":
+                obj.data.renderman_index = len(rm)-1
+            else:
+                obj.renderman_index = len(rm)-1
         return{'FINISHED'}
-            
+
+
+class Renderman_OT_addRendermanLight(bpy.types.Operator):
+    bl_label =""
+    bl_description = ""
+    bl_idname="renderman.add_light"
+
+    shader = bpy.props.StringProperty()
+
+    def invoke(self, context, event):
+        rpasses = context.scene.renderman_settings.passes
+        ldata = bpy.data.lamps.new(name=self.shader, type="POINT")
+        lamp = bpy.data.objects.new(name=self.shader, object_data=ldata)
+        context.scene.objects.link(lamp)
+        atleast_one_pass(ldata, rpasses)
+        ldata.renderman[0].shaderpath = self.shader
+        maintain_lamp_shaders(lamp, context.scene)
+        maintain_light(lamp, context.scene)
+        lamp.location = context.scene.cursor_location
+        for obj in context.scene.objects: obj.select = False
+        lamp.select = True
+        context.scene.objects.active = lamp
+        return{'FINISHED'}
+
+
 class Renderman_OT_removepass_selected(bpy.types.Operator):
     bl_label="Remove Pass"
     bl_idname = "renderman.remove_pass_selected"
@@ -2018,6 +2137,7 @@ class Renderman_OT_RefreshShaderList(bpy.types.Operator):
 
     def invoke(self, context, event):
         checkshadercollection(context.scene)
+        initial_load_data(context.scene)
         return {'FINISHED'}
 
 

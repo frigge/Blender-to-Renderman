@@ -1,6 +1,6 @@
 
 #Blender 2.5 or later to Renderman Exporter
-#Author: Sascha Fricke
+# Copyright (C) 2011 Sascha Fricke
 
 
 
@@ -39,6 +39,10 @@ import subprocess
 import export_renderman
 import export_renderman.ops
 from export_renderman.ops import *
+
+import threading
+
+import time
 
 String = bpy.props.StringProperty
 Bool = bpy.props.BoolProperty
@@ -79,16 +83,14 @@ class PROPERTIES_OT_maintain_renderman(bpy.types.Operator):
     bl_options = {'REGISTER'}
     
     def modal(self, context, event):
-        #print("Blender to Renderman Addon Loaded")
-        maintain(context)
+        if event.type == "TIMER":
+            maintain(context.scene)
         return {'PASS_THROUGH'}
                 
     def execute(self, context):
         wm = context.window_manager
-        global IS_RUNNING
-        if context.area.type == 'PROPERTIES':
-            dbprint("adding modal handler")
-            wm.modal_handler_add(self)
+        wm.modal_handler_add(self)
+        wm.event_timer_add(0.1, context.window)
         return {'RUNNING_MODAL'}
 
 def restart():
@@ -116,8 +118,10 @@ def set_preview_mat(mat):
 def getactivepass(scene):
     rm = scene.renderman_settings
     passes = rm.passes
-    active_pass = None
-    active_pass = passes[rm.passes_index]
+    try:
+        active_pass = passes[rm.passes_index]
+    except IndexError:
+        return None
     return active_pass
     
     
@@ -278,6 +282,11 @@ def update_illuminate_list(obj, scene):
                 else:
                     item.illuminate = False
             objpass.lightgroup = ""
+
+def getLightList(scene):
+    maintain_lists(scene)
+    global light_list
+    return light_list
 
 def check_displaydrivers(scene):
     rmansettings = scene.renderman_settings
@@ -498,7 +507,7 @@ def maintain_beauty_pass(scene):
         renderman_settings.passes.add().name = 'Beauty'
     beauty = renderman_settings.passes[0]
     if not beauty.displaydrivers:
-        export_renderman.ops.adddisp(beauty)
+        export_renderman.ops.adddisp(beauty, scene=scene)
         
     if renderman_settings.passes:
         if len(renderman_settings.passes) == 1 and not renderman_settings.searchpass:
@@ -574,8 +583,6 @@ def maintain_light(light, scene):
             if type == 'spot':
                 light.data.type = 'SPOT'
                 light.data.shadow_method = "BUFFER_SHADOW"
-                #light.data.shadow_buffer_clip_start = rc.near_clipping TODO: need to get the right requested pass
-                #light.data.shadow_buffer_clip_end = rc.far_clipping
         
             lrotx = light.rotation_euler[0]
             lroty = light.rotation_euler[1]
@@ -593,20 +600,19 @@ def maintain_light(light, scene):
                 if name in parameter:
                     active_parameter = parameter[name]
                     type = active_parameter.parametertype
-                    if not active_parameter.free:
-                        if type == "color":
-                            active_parameter.colorparameter = value
-                        elif type == "float":
-                            if active_parameter.vector_size == 1:
-                                active_parameter.float_one[0] = value
-                            elif active_parameter.vector_size == 3:
-                                active_parameter.float_three[0] = value[0]
-                                active_parameter.float_three[1] = value[1]
-                                active_parameter.float_three[2] = value[2]
-                        elif type == "integer":
-                            active_parameter.int_one[0] = value
-                        elif type == "string":                                       
-                            active_parameter.textparameter = value
+                    if type == "color":
+                        active_parameter.colorparameter = value
+                    elif type == "float":
+                        if active_parameter.vector_size == 1:
+                            active_parameter.float_one[0] = value
+                        elif active_parameter.vector_size == 3:
+                            active_parameter.float_three[0] = value[0]
+                            active_parameter.float_three[1] = value[1]
+                            active_parameter.float_three[2] = value[2]
+                    elif type == "integer":
+                        active_parameter.int_one[0] = value
+                    elif type == "string":                                       
+                        active_parameter.textparameter = value
                         
             if type == 'point':
                 light.data.type = 'POINT'
@@ -639,11 +645,11 @@ def maintain_light(light, scene):
                 maintainitem("from", [0, 0, 0])                       
 
 def objpass(p):
-    if len(p.renderman) == 0:
-        p.renderman.add().name = 'Beauty'
-    if p.renderman_index < 0 or p.renderman_index >= len(p.renderman):
-        p.renderman_index = len(p.renderman)-1
-    return p.renderman[p.renderman_index]
+    try:
+        rpass = p.renderman[p.renderman_index]
+    except IndexError:
+        rpass = None
+    return rpass
 
 def linked_pass(p, rpass):
     lpass = None
@@ -669,7 +675,7 @@ def maintain_lists(scene):
                     al = False
                     if obj.active_material:
                         m = obj.active_material
-                        if objpass(m).arealight_shader != "":
+                        if (objpass(m) != None) and objpass(m).arealight_shader != "":
                             al = True
                 if (obj.type == 'LAMP' or al) and not obj.name in light_list:
                     light_list.append(obj.name)
@@ -697,18 +703,6 @@ class Renderman_OT_set_Active_Camera(bpy.types.Operator):
         context.scene.camera = context.scene.objects[self.cam]
         return {'FINISHED'}
 
-def maintain_camera(rpass, scene):
-    if rpass.camera_object == "" and scene.camera:
-        rpass.camera_object = scene.camera.name
-    rd = scene.render
-    rc = rpass.renderman_camera
-    camobj = scene.objects[rpass.camera_object]
-    if camobj.type == "CAMERA":
-        rc.near_clipping = camobj.data.clip_start
-        rc.far_clipping = camobj.data.clip_end 
-    if rc.square:
-        rc.resy = rc.resx
-    
 def sync_BI_dimensions(scene):
     apass = getactivepass(scene)
     rd = scene.render
@@ -913,6 +907,7 @@ def load_shaders(scene):
 
 pass_preset_outputs = {}
 def load_pass_presets(scene):
+    print("hier??")
     active_engine = scene.renderman_settings.active_engine
     main_preset_path = bpy.utils.preset_paths('renderman')[0]
     preset_dir = os.path.join(main_preset_path, active_engine)
@@ -932,6 +927,7 @@ def load_pass_presets(scene):
                 if l.find("NewDisplay") != -1:
                     outputs.append(l.split()[1])
             pass_preset_outputs[preset] = outputs
+            f.close()
 
     def look(prdir):
         for pr in os.listdir(prdir):
@@ -939,10 +935,8 @@ def load_pass_presets(scene):
             if os.path.isdir(path):
                 look(path)
             else:
-                try:
-                    read_outputs(path)
-                except UnicodeDecodeError:
-                    pass
+                read_outputs(path)
+                
     if os.path.exists(preset_dir):
         look(preset_dir)
 
@@ -950,8 +944,6 @@ def load_pass_presets(scene):
 def initial_load_data(scene):
     rm = scene.renderman_settings
     load_shaders(scene)
-    load_pass_presets(scene)
-
 
 def maintain_client_passes_add(obj, scene):
     rm = scene.renderman_settings
@@ -974,6 +966,8 @@ def maintain_client_passes_add(obj, scene):
                 dbprint(rpass_name, lvl=1, grp="rpass")
                 rm.passes.add().name = rpass_name
                 rpass = rm.passes[rpass_name]
+                maintain_hiders(rpass, scene)
+                maintain_searchpaths(rpass, scene)
                 rpass.client = obj.name
                 rpass.camera_object = obj.name
                 rpass.requested = True
@@ -1009,7 +1003,9 @@ def maintain_client_passes_add(obj, scene):
         except KeyError:
             obj.requests.remove(request_index)
     
-def maintain_client_passes_remove(i, rpass, scene):
+def maintain_client_passes_remove(rpass, scene):
+    passlist = scene.renderman_settings.passes.keys()
+    i = passlist.index(rpass.name)
     if rpass.requested:
         if rpass.client != "" and (not rpass.client in scene.objects):
             dbprint("removing", rpass, "01", lvl=1, grp="requests")
@@ -1034,14 +1030,13 @@ def maintain_client_passes_remove(i, rpass, scene):
 def maintain_render_passes(rpass, scene):
     rm = scene.renderman_settings
     maintain_shutter_types(rpass, scene)
-    maintain_world_shaders(rpass, scene)
-    maintain_camera(rpass, scene)
-    maintain_display_drivers(rpass, scene)
+    #maintain_world_shaders(rpass, scene)
+    #maintain_display_drivers(rpass, scene)
     maintain_output_images(rm, rpass)
-    maintain_hiders(rpass, scene)
+    #maintain_hiders(rpass, scene)
 #       create_render_layers(rpass, scene)
     maintain_searchpaths(rpass, scene)
-    maintain_display_options(rpass, rm)
+    #maintain_display_options(rpass, rm)
     maintain_custom_code(rpass, rm)
     
 
@@ -1062,71 +1057,297 @@ def maintain_texture_type(tex):
     types_dict = {"file" : "IMAGE", "none" : "NONE", "bake" : "NONE"}
     if hasattr(tex, "renderman"):
         tex.type = types_dict[tex.renderman.type]
-
-COUNT = 0
-UPDATE = 5
-def maintain(context):
-    scene = context.scene
-    global COUNT, UPDATE
-    COUNT += 1
-    if COUNT == UPDATE:
-        COUNT = 0
-        if scene.render.engine == 'RENDERMAN':
-            global RENDER
-            
-            sync_BI_dimensions(scene)
-            
-            pathcoll = scene.renderman_settings.shaders
-            if pathcoll.shaderpaths and not pathcoll.shadercollection:
-                checkshadercollection(scene)
         
-            initial_load_data(scene)
+class WatchRenderPasses(threading.Thread):
+    looping = True
+    
+    def run(self):
+        while self.looping:
+            set_block_blender()
+            if bpy.data == None:
+                continue
             
-            maintain_beauty_pass(scene)
-            
-            maintain_lists(scene)
-            maintain_rib_structure(scene)    
-            rm = scene.renderman_settings
-            
-            RENDER = rm.renderexec #pass the render executable to the preview scene
-            
-            passes = rm.passes
-            
-            ##### Render Passes
-            for i, rpass in enumerate(passes):
-                maintain_render_passes(rpass, scene)
-                maintain_client_passes_remove(i, rpass, scene)
-            
-            ##### Objects
-            for obj in scene.objects:
-                atleast_one_pass(obj, passes)
-                maintain_client_passes_add(obj, scene)
-                ##### Lights
-                if obj.type == 'LAMP':
-                    atleast_one_pass(obj.data, passes)
-                    maintain_lamp_shaders(obj, scene)
-                    maintain_light(obj, scene)       
-        
-                else:
-                    ##### Particle Systems
-                    for ps in obj.particle_systems:
-                        atleast_one_pass(ps.settings, passes)
-                    ##### Materials
-                    for m in obj.material_slots:
-                        atleast_one_pass(m.material, passes)
-                        maintain_surface_color(m.material)
-                        maintain_material_shaders(m.material, scene)
-                        for t in m.material.texture_slots:
-                            if hasattr(t, "texture"):
-                                maintain_texture_type(t.texture)
-                    update_illuminate_list(obj, scene)
+            for scene in bpy.data.scenes:
+                if scene.render.engine != 'RENDERMAN':
+                    continue
+                
+                rm = scene.renderman_settings
+                ##copy pass names into own list
+                passnames = []
+                try:
+                    for rpass in rm.passes:
+                        passnames.append(rpass.name)
+                except:
+                    continue
+                
+                ##### Render Passes
+                for i, rp in enumerate(passnames):
+                    try:
+                        rpass = rm.passes[rp]
+                    except:
+                        continue
                     
-            check_displaydrivers(scene) 
-            check_display_variables(scene)  
+                    try:
+                        maintain_render_passes(rpass, scene)
+                        maintain_client_passes_remove(i, rpass, scene)
+                    except:
+                        continue
+            set_free_blender()
+            time.sleep(1)
+            
+    def stop(self):
+        self.looping = False
+        threading.Thread.stop()
+            
+class WatchSceneSettings(threading.Thread):
+    looping = True
+    
+    def run(self):
+        while self.looping:
+            set_block_blender()
+            if bpy.data == None:
+                continue
+            
+            for scene in bpy.data.scenes:
+                if scene.render.engine != 'RENDERMAN':
+                    continue
+
+                try:
+                    sync_BI_dimensions(scene)
+                except:
+                    continue
+
+                try:
+                    pathcoll = scene.renderman_settings.shaders
+                except:
+                    continue
+
+                try:
+                    if pathcoll.shaderpaths and not pathcoll.shadercollection:
+                        checkshadercollection(scene)
+                except:
+                    continue
+
+                try:
+                    initial_load_data(scene)
+                except:
+                    continue
+                
+                try:
+                    maintain_beauty_pass(scene)
+                except:
+                    continue
+                
+                try:
+                    maintain_lists(scene)
+                except:
+                    continue
+                
+                try:
+                    maintain_rib_structure(scene)
+                except:
+                    continue
+            set_free_blender()
+            time.sleep(1)
+            
+    def stop(self):
+        self.looping = False
+        threading.Thread.stop()
         
-            sort_collection(scene.renderman_settings.hider_list)
-            for hider in scene.renderman_settings.hider_list:
-                sort_collection(hider.options)   
+class WatchObjects(threading.Thread):
+    looping = True
+    
+    def run(self):
+        while self.looping:
+            set_block_blender()
+            if bpy.data == None:
+                continue
+                
+                
+            for scene in bpy.data.scenes:
+                if scene.render.engine != 'RENDERMAN':
+                    continue
+                
+                try:
+                    rm = scene.renderman_settings
+                except:
+                    continue
+                    
+                for obj in scene.objects:
+                    ##### Objects
+                    try:
+                        atleast_one_pass(obj, rm.passes)
+                    except:
+                        break
+                    
+                    try:
+                        maintain_client_passes_add(obj, scene)
+                    except:
+                        break
+                        
+                    ###### Lights
+                    try:
+                        objtype = obj.type
+                    except:
+                        break
+                        
+                    if objtype == 'LAMP':
+                        try:
+                            atleast_one_pass(obj.data, rm.passes)
+                        except:
+                            break
+                            
+                        try:
+                            maintain_lamp_shaders(obj, scene)
+                        except:
+                            break
+                        
+                        try:    
+                            maintain_light(obj, scene)    ##FIXME I'M CAUSING A CRASH   
+                        except:
+                            break
+            
+                    else:
+                        ###### Particle Systems
+                        #for ps in obj.particle_systems:
+                            #atleast_one_pass(ps.settings, rm.passes)
+                        ##### Materials
+                        for m in obj.material_slots:
+                            try:
+                                atleast_one_pass(m.material, rm.passes)
+                            except:
+                                continue
+                            
+                            try:
+                                maintain_surface_color(m.material) ###FIXME I'M CAUSING A CRASH
+                            except:
+                                continue
+                                
+                            try:
+                                maintain_material_shaders(m.material, scene)
+                            except:
+                                continue
+                                
+                            #for t in m.material.texture_slots:
+                                #if hasattr(t, "texture"):
+                                    #maintain_texture_type(t.texture)
+                        try:
+                            update_illuminate_list(obj, scene)
+                        except:
+                            continue
+            set_free_blender()
+            time.sleep(1)
+                        
+    def stop(self):
+        self.looping = False
+        threading.Thread.stop()
+                        
+SceneThread = None
+RenderPassesThread = None
+ObjectsThread = None
+
+def threaded_maintaining():
+    global SceneThread, RenderPassesThread, ObjectsThread
+    SceneThread = WatchSceneSettings()
+    SceneThread.setDaemon(True)
+    SceneThread.start()
+    
+    RenderPassesThread = WatchRenderPasses()
+    RenderPassesThread.setDaemon(True)
+    RenderPassesThread.start()
+    
+    ObjectsThread = WatchObjects()
+    ObjectsThread.setDaemon(True)
+    ObjectsThread.start()
+    
+def stop_maintaining():
+    global SceneThread, RenderPassesThread, ObjectsThread
+    SceneThread.stop()
+    RenderPassesThread.stop()
+    ObjectsThread.stop()
+
+def maintain_loop():
+    looping = False
+    while True:
+        try:
+            if not looping:
+                looping = True
+                try:
+                    scenes = bpy.data.scenes
+                except:
+                    continue
+                scenelist = []
+                try:
+                    for scene in scenes:
+                        ##copy scene names into new list to catch sync errors on trying to access bpy.data
+                        scenelist.append(scene.name)
+                except:
+                    continue
+                        
+                for scene in scenelist:
+                    maintain(scene)
+                
+                looping = False
+                time.sleep(1)
+        except:
+            continue
+        
+            
+            
+def maintain(scene):
+    if scene.render.engine == 'RENDERMAN':
+        global RENDER
+
+        sync_BI_dimensions(scene)
+
+        #pathcoll = scene.renderman_settings.shaders
+
+        #if pathcoll.shaderpaths and not pathcoll.shadercollection:
+            #checkshadercollection(scene)
+
+        #initial_load_data(scene)
+        
+        #maintain_beauty_pass(scene)
+        
+        #maintain_lists(scene)
+        #maintain_rib_structure(scene)    
+        rm = scene.renderman_settings
+        
+        ##### Render Passes
+        for i, rpass in enumerate(rm.passes):
+            maintain_client_passes_remove(i, rpass, scene)
+            maintain_render_passes(rpass, scene)
+
+        ##### Objects
+        for obj in scene.objects:
+            atleast_one_pass(obj, rm.passes)
+            maintain_client_passes_add(obj, scene)
+            ###### Lights
+            if obj.type == 'LAMP':
+                pass
+                #atleast_one_pass(obj.data, rm.passes)
+                #maintain_lamp_shaders(obj, scene)
+                #maintain_light(obj, scene)
+    
+            else:
+                ##### Particle Systems
+                for ps in obj.particle_systems:
+                    atleast_one_pass(ps.settings, rm.passes)
+                ##### Materials
+                for m in obj.material_slots:
+                    atleast_one_pass(m.material, rm.passes)
+                    maintain_surface_color(m.material)
+                    maintain_material_shaders(m.material, scene)
+                    for t in m.material.texture_slots:
+                        if hasattr(t, "texture"):
+                            maintain_texture_type(t.texture)
+                update_illuminate_list(obj, scene)
+            
+        #check_displaydrivers(scene) 
+        #check_display_variables(scene)  
+        sort_collection(scene.renderman_settings.hider_list)
+        for hider in scene.renderman_settings.hider_list:
+            sort_collection(hider.options)  
 
 
 def checkextension(file):
@@ -1170,12 +1391,18 @@ def get_shaderinfo(shader, shadercollection, scene):
 
 
 def checkshadercollection(scene):
-    shaders = scene.renderman_settings.shaders
+    try:
+        shaders = scene.renderman_settings.shaders
 
-    for shader in shaders.shadercollection:
-        shaders.shadercollection.remove(0)
+        for shader in shaders.shadercollection:
+            shaders.shadercollection.remove(0)
+    except:
+        return
 
-    shadbin = scene.renderman_settings.shaderbinary
+    try:
+        shadbin = scene.renderman_settings.shaderbinary
+    except:
+        return
 
     def addshader(path):
         for item in os.listdir(path):

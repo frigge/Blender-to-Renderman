@@ -1,6 +1,6 @@
 
 #Blender 2.5 or later to Renderman Exporter
-#Author: Sascha Fricke
+# Copyright (C) 2011 Sascha Fricke
 
 
 
@@ -498,11 +498,7 @@ class ObjectParameters(bpy.types.PropertyGroup):            #Object Attributes
 
     attribute_groups = bpy.props.CollectionProperty(type=AttributeOptionGroup)
 
-    light_list = bpy.props.CollectionProperty(name="Light List",
-                                        description="Ligh List",
-                                        type=LightCollection)
-                                        
-    lightgroup = bpy.props.StringProperty()
+    lightlist = bpy.props.CollectionProperty(type=EmptyCollections)
 
     shadingrate = bpy.props.FloatProperty(name="Shading Rate",
                                     min = 0,
@@ -681,19 +677,7 @@ class RibStructureBase(bpy.types.PropertyGroup):
 class RendermanCamera(bpy.types.PropertyGroup):
     respercentage = bpy.props.IntProperty(min=1, max=100, default=100, subtype='PERCENTAGE', name="Resolution Percentage")
 
-    resx = bpy.props.IntProperty(min = 1, max = 100000, default = 1920, name = "X Resolution")
-
-    resy = bpy.props.IntProperty(min = 1, max = 100000, default = 1080, name = "Y Resolution")
-
-    aspectx = bpy.props.FloatProperty(min = 1, max = 10000, default = 1, name ="Aspect X")
-
-    aspecty = bpy.props.FloatProperty(min = 1, max = 10000, default = 1, name ="Aspect Y")
-
-    square = bpy.props.BoolProperty(name = "Square", default = False, description = "Same Value for X and Y Resolution")
-
-    shift_x = bpy.props.FloatProperty(default = 0, name="Shift X")
-
-    shift_y = bpy.props.FloatProperty(default = 0, name="Shift Y")
+    res = bpy.props.IntProperty(min = 1, max = 100000, default = 512, name = "Resolution")
 
     fov = bpy.props.FloatProperty(default = 90, min=0.001, max= 360, name="FOV")
 
@@ -733,6 +717,7 @@ class VarCollections(bpy.types.PropertyGroup):
     type_ = bpy.props.StringProperty()
 
 class passes(bpy.types.PropertyGroup):            #passes
+    linkToMe = bpy.props.BoolProperty(default=False)
     export = bpy.props.BoolProperty(name="Export", description="Export this Render Pass", default=True)
 
     client = bpy.props.StringProperty()
@@ -840,8 +825,6 @@ class passes(bpy.types.PropertyGroup):            #passes
     world_code = bpy.props.CollectionProperty(type = CustomCodeCollection)
 
     world_code_index = bpy.props.IntProperty(min = -1, max = 1000, default = -1)
-
-    renderman_camera = bpy.props.PointerProperty(type = RendermanCamera)
 
     attribute_groups = bpy.props.CollectionProperty(type=AttributeOptionGroup)
     
@@ -1074,6 +1057,8 @@ def register():
     Object = bpy.types.Object
 
     Object.requests = bpy.props.CollectionProperty(type = ClientParameters)
+
+    Object.renderman_camera = bpy.props.PointerProperty(type=RendermanCamera)
 
     Object.renderman = bpy.props.CollectionProperty(type = ObjectParameters, name="Renderman")
 
