@@ -33,6 +33,10 @@
 import bpy
 from math import *
 
+import export_renderman
+import export_renderman.rm_maintain
+from export_renderman.rm_maintain import *
+
 RM_FILTER =(("box", "Box", "Box Filter"),
             ("gaussian", "Gaussian", "Gaussian Filter"),
             ("sinc", "Sinc", "Cube Filter"),
@@ -45,6 +49,23 @@ RM_FILTER =(("box", "Box", "Box Filter"),
 
 ##################################################################################################################################
 #Define classes for Collection and Pointer properties
+
+def float_callback(self, context):
+    if repr(type(self.id_data)).find("Lamp") != -1:
+        lamp = self.id_data
+        rm = self.id_data.renderman[self.id_data.renderman_index]
+        try:
+            if "intensity" in rm.light_shader_parameter:
+                lamp.energy = rm.light_shader_parameter['intensity'].float_one[0] 
+            if "coneangle" in rm.light_shader_parameter:
+                lamp.spot_size = rm.light_shader_parameter['coneangle'].float_one[0] 
+            if "conedeltaangle" in rm.light_shader_parameter:
+                lamp.spot_blend = rm.light_shader_parameter['conedeltaangle'].float_one[0]
+            if "lightcolor" in rm.light_shader_parameter:
+                lamp.color = rm.light_shader_parameter['lightcolor'].colorparameter
+        except AttributeError:
+            pass
+    
 
 class Collection(bpy.types.PropertyGroup):            #All Variable Properties: Shader Parameters, Options, Attributes
 
@@ -80,6 +101,7 @@ class Collection(bpy.types.PropertyGroup):            #All Variable Properties: 
 
     float_one = bpy.props.FloatVectorProperty( precision = 4,
                                         size = 1,
+                                        update=float_callback,
                                         options={'ANIMATABLE'})
 
     float_two = bpy.props.FloatVectorProperty( default=(0.0, 0.0),
@@ -189,7 +211,10 @@ class DisplayCollection(bpy.types.PropertyGroup):         #Display Drivers
 
     custom_options = bpy.props.CollectionProperty(type = Collection)
 
-    default_name = bpy.props.BoolProperty(default = True, name = "Default", description="Default Filename")      
+    default_name = bpy.props.BoolProperty(default = True, 
+                                            name = "Default", 
+                                            description="Default Filename",
+                                            update=maintain_display_drivers)
     
     var = bpy.props.StringProperty(default="rgba")                               
                                 
@@ -643,7 +668,10 @@ class RibStructure(bpy.types.PropertyGroup):
 
     filename = bpy.props.StringProperty(name="File", default="", subtype = 'FILE_PATH')
 
-    default_name = bpy.props.BoolProperty(default = True, name = "Default Name", description = "Default RIB Archive Name")
+    default_name = bpy.props.BoolProperty(default = True, 
+                                            name = "Default Name", 
+                                            description = "Default RIB Archive Name",
+                                            update=maintain_rib_structure)
 
     overwrite = bpy.props.BoolProperty(default = True, name = "Overwrite", description="overwrite existing files")
 
@@ -794,7 +822,8 @@ class passes(bpy.types.PropertyGroup):            #passes
     shutter_type = bpy.props.EnumProperty(name = "Shutter Type",
                                                  items = (  ("angle", "Angle", ""),
                                                             ("seconds", "Seconds", "")),
-                                                 default = "seconds")
+                                                 default = "seconds",
+                                                 update=maintain_shutter_types)
                             
     shutterspeed_sec = bpy.props.FloatProperty(name="Shutter Speed",
                                 min=0.0001,
@@ -904,7 +933,8 @@ class RendermanSceneSettings(bpy.types.PropertyGroup):            #Renderman Sce
 
     passes_index = bpy.props.IntProperty(default=-1,
                                     min=-1,
-                                    max=1000)
+                                    max=1000,
+                                    update=CB_m_render_passes)
 
     searchpass = bpy.props.StringProperty(name = "Search Pass",
                             default = "")

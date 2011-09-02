@@ -62,6 +62,7 @@ class DisplayDriverSelector(bpy.types.Operator):
         rm = context.scene.renderman_settings
         rpass.displaydrivers[self.display].displaydriver = self.driver
         maintain_display_options(rpass, rm)
+        maintain_display_drivers(rpass, context.scene)
         return{'FINISHED'}
 
 class DisplayDriverSelectorMenu(bpy.types.Operator):
@@ -276,7 +277,7 @@ def matparm_menu(parm, mname, list_path, client):
 def matparmlayout(context, parmlist, layout, material, rm, shid, client=""):
     if parmlist:
         for active_parameter in parmlist:
-            if active_parameter.name in ['coneangle', 'conedeltaangle', 'from', 'to', 'lightcolor', 'intensity']:
+            if active_parameter.name in ['from', 'to']: 
                 continue
             parmlist_string = repr(parmlist)
             parmlist_string_array = parmlist_string.split(".")
@@ -302,7 +303,6 @@ def matparmlayout(context, parmlist, layout, material, rm, shid, client=""):
                 mname = active_parameter.name+shid
                 if (not mname in dir(bpy.types)
                     or getattr(bpy.types, mname).mclient != client):
-                    print("hey")
                     matparm_menu(active_parameter, mname, parm_path, client)
                 request = -1
                 if client != "":
@@ -594,11 +594,12 @@ def attribute_menu(name, path="", selected=False): ### create the attribute Menu
             groups = rman.attribute_groups
         for grp in groups:
             mname = grp.name+"add"+t
-            cls = type(mtype)(mname, (mtype,), {  "bl_label" : grp.name, 
-                                            "grp_name" : grp.name, 
-                                            "draw" : draw_attributes,
-                                            "path" : path})
-            bpy.utils.register_class(cls)
+            if not mname in dir(bpy.types):
+                cls = type(mtype)(mname, (mtype,), {  "bl_label" : grp.name, 
+                                                "grp_name" : grp.name, 
+                                                "draw" : draw_attributes,
+                                                "path" : path})
+                bpy.utils.register_class(cls)
             layout.menu(mname)
                                                                 
     ## Attributes 
@@ -621,7 +622,8 @@ def attribute_menu(name, path="", selected=False): ### create the attribute Menu
                 op.path = path
             op.grp = self.grp_name
             op.attr = attrname
-           
+
+
     ##create menus
     ##attribute groups
     mname = t+"_"+name     
@@ -641,6 +643,7 @@ def attribute_menu(name, path="", selected=False): ### create the attribute Menu
                                         "draw" : draw_menu})
         bpy.utils.register_class(cls)
         
+
 def dimensions_layout(layout, obj, env=False):
     rc = obj.renderman_camera
     col = layout.column(align = True)
@@ -674,9 +677,6 @@ def dimensions_layout(layout, obj, env=False):
     else:
         row.prop(rc, "res")
         row = col.row(align=True)
-        if obj.data.type == "SPOT":
-            row.prop(obj.data, "spot_size")
-            row.prop(obj.data, "spot_blend")
         if obj.data.shadow_method == "BUFFER_SHADOW":
             row = col.row(align=True)
             row.prop(obj.data, "shadow_buffer_clip_start", text="clip start")
@@ -1103,7 +1103,7 @@ class Renderman_PT_world_Attribute_Panel(bpy.types.Panel, WorldButtonsPanel):
             
 class Renderman_PT_CustomWorldCodePanel(bpy.types.Panel, WorldButtonsPanel):
     bl_label = "Custom Code"
-    bl_options = "DEFAULT_CLOSED"
+    bl_options = {"DEFAULT_CLOSED"}
     
     COMPAT_ENGINES = {'RENDERMAN'}
     
@@ -1224,7 +1224,7 @@ class Renderman_PT_Render(RenderButtonsPanel, bpy.types.Panel):
 class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
     bl_label = "Renderman Settings"
     bl_idname = "RenderSettingsPanel"
-    bl_options = 'DEFAULT_CLOSED'
+    bl_options = {'DEFAULT_CLOSED'}
 
     COMPAT_ENGINES = {'RENDERMAN'}
     
@@ -1466,7 +1466,7 @@ class Renderman_MT_addPassMenu(bpy.types.Menu):
 
 class Renderman_PT_RIB_Structure(bpy.types.Panel, RenderButtonsPanel):
     bl_label = "Rib Structure"
-    bl_options = 'DEFAULT_CLOSED'
+    bl_options = {'DEFAULT_CLOSED'}
     
     COMPAT_ENGINES = {'RENDERMAN'}
     
@@ -1805,7 +1805,7 @@ class Render_PT_RendermanDisplayPanel(RenderButtonsPanel, bpy.types.Panel):
 
 class Renderman_PT_CustomSceneCodePanel(bpy.types.Panel, RenderButtonsPanel):
     bl_label = "Custom Code"
-    bl_options = "DEFAULT_CLOSED"
+    bl_options = {"DEFAULT_CLOSED"}
     
     COMPAT_ENGINES = {'RENDERMAN'}
     
@@ -2054,7 +2054,7 @@ class Renderman_PT_Material_Passes(bpy.types.Panel, MaterialButtonsPanel):
         
 class RendermanMaterial_PT_MatteFlag(bpy.types.Panel, MaterialButtonsPanel):
     bl_label = "Matte"
-    bl_options = "HIDE_HEADER"
+    bl_options = {"HIDE_HEADER"}
     
     COMPAT_ENGINES = {'RENDERMAN'}
         
@@ -2336,10 +2336,6 @@ class LAMP_PT_RendermanLight(LightDataButtonsPanel, bpy.types.Panel):
             lamp = light.data.renderman[light.data.renderman_index]
             type = light.data.type
             renderman = lamp
-            row = layout.row(align=True)
-            row.prop(light.data, "color")
-            row = layout.row(align=True)
-            row.prop(light.data, "energy")
 
             row=layout.row(align=True)
 
@@ -2652,6 +2648,7 @@ class Camera_PT_dimensions(bpy.types.Panel, CameraDataButtonsPanel):
 #                                                                                                       #
 #########################################################################################################
 
+from bl_ui import properties_particle
 class ParticleButtonsPanel():
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
@@ -2678,7 +2675,7 @@ class Renderman_PT_ParticleMBPanel(bpy.types.Panel, ParticleButtonsPanel):
     COMPAT_ENGINES = {'RENDERMAN'}
     
     def draw(self, context):
-        scene = context.scenemorge
+        scene = context.scene
         layout = self.layout
         psystem = context.particle_system
         try:
@@ -2753,6 +2750,7 @@ class Renderman_PT_particles_Custom_code_Panel(bpy.types.Panel, ParticleButtonsP
     def draw(self, context):
         layout = self.layout
         psystem = context.particle_system
+        if not psystem: return
         if psystem.settings.renderman:
             custom_code_layout("particles", context, layout)
         else:
@@ -2913,6 +2911,7 @@ def draw_obj_specials_rm_menu(self, context):
     self.layout.menu("Renderman_MT_LightLinking")
     self.layout.operator("renderman.set_shading_rate_selected")
 
+
 class Renderman_MT_obj_selected_attributepresets(bpy.types.Menu):
     bl_label = "Load Attribute Preset"
     
@@ -2924,21 +2923,6 @@ class Renderman_MT_obj_selected_attributepresets(bpy.types.Menu):
                 p = preset.replace(".preset", "")
                 self.layout.operator("attribute.load_selected", text=p.replace("_", " ")).preset = p
 
-
-class Renderman_PT_3D_View_Ops(bpy.types.Panel):
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_label = "Renderman"
-    
-    @classmethod
-    def poll(cls, context):
-        rd = context.scene.render
-        return rd.engine == 'RENDERMAN'
-    
-    def draw(self, context):
-        #maintain(context.scene)
-        layout = self.layout
-        layout.menu("Renderman_MT_object_specials")
 
 class Renderman_MT_addRendermanLight(bpy.types.Menu):
     bl_label = "Renderman Light"

@@ -2,8 +2,6 @@
 #Blender 2.5 or later to Renderman Exporter
 # Copyright (C) 2011 Sascha Fricke
 
-
-
 #############################################################################################
 #                                                                                           #
 #       Begin GPL Block                                                                     #
@@ -41,10 +39,10 @@
 
 import bpy
 import export_renderman
-import export_renderman.rm_maintain
 from export_renderman.rm_maintain import *
-import export_renderman.export
-from export_renderman.export import *
+from export_renderman.rm_preset_funcs import *
+#import export_renderman.export as rm_export
+import os
 
 String = bpy.props.StringProperty
 Bool = bpy.props.BoolProperty
@@ -56,16 +54,6 @@ IntVector = bpy.props.IntVectorProperty
 Int = bpy.props.IntProperty
 Float = bpy.props.FloatProperty
 
-def checkForPath(target_path): # create Presetsdirecory if not found
-    try:
-        if os.path.exists(target_path):
-            pass
-        else:
-            os.mkdir(target_path)
-    except:
-        pass
-    
-    
 def clear_collections(scene):
     global pass_preset_outputs
     pass_preset_outputs = {}
@@ -110,7 +98,7 @@ def clear_collections(scene):
     for t in dir(bpy.types):
         cl = getattr(bpy.types, t)
         if hasattr(cl, "mclient"):
-            bpy.types.unregister(cl)
+            bpy.types.unregister_class(cl)
         
 class Renderman_OT_force_modal_restart(bpy.types.Operator):
     bl_idname = "renderman.restart"
@@ -154,7 +142,7 @@ class ExecuteRendermanPreset(bpy.types.Operator): ### modified Blenders internal
         maintain_searchpaths(passes[0], scene)
         
         maintain_lists(scene)
-        maintain_rib_structure(scene) 
+        maintain_rib_structure(self, context) 
         return {'FINISHED'}
 
 
@@ -202,7 +190,10 @@ class AddPresetRenderer(bpy.types.Operator): ### based on /scripts/ops/presets.p
         presetname = self._as_filename(self.name)
         filename = self.name + '.py'
 
-        target_path = bpy.utils.preset_paths(self.preset_subdir)[0] # we need some way to tell the user and system preset path
+        preset_path = bpy.utils.preset_paths('')[0]
+        if not bpy.utils.preset_paths(self.preset_subdir)[0]:
+            os.mkdir(os.path.join(preset_path, self.preset_subdir))
+        target_path = bpy.utils.preset_paths(self.preset_subdir)[0]
 
         filepath = os.path.join(target_path, filename)
         checkForPath(target_path)
@@ -390,8 +381,10 @@ class AddAttributePreset(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         rmansettings = context.scene.renderman_settings
-        target_path = bpy.utils.preset_paths("renderman")[0]
-        target_path = os.path.join(target_path, rmansettings.active_engine)
+        target_path = bpy.utils.preset_paths("renderman")
+        if not target_path:
+            return
+        target_path = os.path.join(target_path[0], rmansettings.active_engine)
         checkForPath(target_path)
         filename = rmansettings.presetname+".preset"
         rmansettings.presetname = ""
@@ -420,81 +413,6 @@ class AddAttributePreset(bpy.types.Operator):
                     
         return {'FINISHED'}  
 
-def load_sub_preset(sub_path, master_sub_path, line):
-    export = {"1" : True, "0" : False}
-    raw_value = ""
-    if line.find("(") != -1:
-        raw_value = line[line.find("("):line.find(")")].replace("(", "")
-        line = line.replace("("+raw_value+")", "")
-        val = raw_value.split()
-        grp_name, sub_name, ex = line.split()
-    elif line.find('"') != -1:
-        val = line[line.find('"')+1:line.rfind('"')]
-        line = line.replace(val, "")
-        line = line.replace('"', '')
-        try:
-            grp_name, sub_name, ex = line.split()
-        except:
-            print(line)
-    else:
-        grp_name, sub_name, val, ex = line.split()
-
-    
-    if not sub_name in sub_path:
-        sub_path.add().name = sub_name
-    sub = sub_path[sub_name]
-    master_sub = master_sub_path[sub_name]
-    
-    ptype = master_sub.parametertype
-    float_size = {1 : sub.float_one, 2 : sub.float_two, 3 : sub.float_three}
-    int_size = {1 : sub.int_one, 2 : sub.int_two, 3 : sub.int_three}
-                    
-    sub.export = export[ex]
-    if ptype == "string": sub.textparameter = val
-    
-    if ptype == "color":
-        for i, v in enumerate(val): 
-            sub.colorparameter[i] = float(v)        
-                                         
-    elif ptype == "float":
-        if sub.vector_size > 1:
-            for i, v in enumerate(val):
-                float_size[sub.vector_size][i] = float(v)
-        else:                       
-            float_size[sub.vector_size][0] = float(val[0])
-        
-    elif ptype == "int":
-        if sub.vector_size > 1:
-            for i, v in enumerate(val):
-                int_size[sub.vector_size][i] = int(v)
-        else:
-            int_size[sub.vector_size][0] = int(val[0])
-
-                   
-def load_grp_preset(prs, path, type, scene):
-    if type == "attr": grps = path.attribute_groups
-    else: grps = path.option_groups
-    
-    export = {"0" : False, "1" : True}
-        
-    for line in prs:              
-        if len(line.split()) == 2:
-            grp_name, grp_export = line.split()
-            if not grp_name in grps: grps.add().name = grp_name
-            grps[grp_name].export = export[grp_export]
-            
-        else:
-            if type == "attr":
-                mgrps = scene.renderman_settings.attribute_groups
-            else:
-                mgrps = scene.renderman_settings.option_groups
-            stype = {   "attr" : [grps[grp_name].attributes, mgrps[grp_name].attributes],
-                        "opt" : [grps[grp_name].options, mgrps[grp_name].options]}
-            sub = stype[type]
-            load_sub_preset(sub[0], sub[1], line)
-
-                    
-    
 class LoadAttributePreset(bpy.types.Operator):
     bl_label = "load Preset"
     bl_idname = "attribute.load"
@@ -506,7 +424,10 @@ class LoadAttributePreset(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         rmansettings = context.scene.renderman_settings
-        target_path = os.path.join(bpy.utils.preset_paths("renderman")[0], rmansettings.active_engine)
+        preset_path = bpy.utils.preset_paths('renderman')
+        if not preset_path:
+            return
+        target_path = os.path.join(preset_path[0], rmansettings.active_engine)
 
         preset = self.preset
         try:
@@ -627,33 +548,6 @@ class Renderman_OT_LightLinking(bpy.types.Operator):
 #   Display Operator                        #
 #                                           #
 #############################################
-
-def adddisp(active_pass, name = "Default", display="framebuffer", var="rgba", is_aov=False, aov="", scene=None):
-    defcount = 1
-
-    def getdefname(name, count):
-        countstr = "0"*(2 - len(str(count))) + str(count)
-        defaultname = name+countstr
-        return defaultname
-
-    defname = getdefname(name, defcount)
-
-    for item in active_pass.displaydrivers:
-        if item.name == defname:
-            defcount +=1
-            defname = getdefname(name, defcount)
-
-    active_pass.displaydrivers.add().name = defname
-    dispdriver = active_pass.displaydrivers[defname]
-    dispdriver.displaydriver = display
-    dispdriver.var = var
-    dispdriver.is_aov = is_aov
-    dispdriver.aov = aov
-    maintain_display_drivers(active_pass, scene)
-    check_displaydrivers(scene) 
-    check_display_variables(scene)
-    maintain_display_options(active_pass, scene.renderman_settings)
-    return defname
 
 class Renderman_OT_addDisplay(bpy.types.Operator):
     bl_label = "addDisplay"
@@ -782,6 +676,9 @@ class Renderman_OT_writePassPreset(bpy.types.Operator):
         rmansettings = scene.renderman_settings
         active_pass = getactivepass(scene)
         active_engine = scene.renderman_settings.active_engine
+        preset_path = bpy.utils.preset_paths('') 
+        if not bpy.utils.preset_paths('renderman'):
+            os.mkdir(os.path.join(preset_path, 'renderman'))
         main_preset_path = bpy.utils.preset_paths('renderman')[0]
         sub_preset_path = os.path.join(main_preset_path, active_engine)
         checkForPath(sub_preset_path)
@@ -1001,141 +898,7 @@ class Renderman_OT_writePassPreset(bpy.types.Operator):
             shader_presets(gshad.atmosphere_shader_parameter, g+'atmosphere_shader_parameter')
         file.write('##\n\n')                  
         return {'FINISHED'}
-        
-
-def invoke_preset(rpass, preset, scene):
-    rm = scene.renderman_settings
-    active_engine = rm.active_engine
-    maintain_hiders(rpass, scene)
-    maintain_searchpaths(rpass, scene)
-    main_preset_path = bpy.utils.preset_paths('renderman')[0]
-    sub_preset_path = os.path.join(main_preset_path, active_engine)
-    
-    preset_width_subdirs = preset.split("/")
-    for pr in preset_width_subdirs:
-        sub_preset_path = os.path.join(sub_preset_path, pr)
-    
-    preset_file = sub_preset_path+'.pass'
-
-    pass_path = 'bpy.context.scene.renderman_settings.passes["'+rpass.name+'"].'
-    
-    try:
-        file = open(preset_file, "r")
-    except:
-        print("file not found")
-        return 0
-
-    def eval_preset(ei, plines):
-        pi = ei
-        while True:
-            pi += 1
-            pline = plines[pi]
-            if pline == '##\n': break
-            else:
-                prop = pass_path + pline
-                try:
-                    exec(prop)
-                except:
-                    print(prop)
-                    raise
-    def eval_sub_preset(ei, plines, type):                
-        subs = []
-        pi = ei
-        while True:
-            pi += 1
-            line = lines[pi]
-            if line == '##\n': break
-            else:
-                subs.append(line)
-        load_grp_preset(subs, rpass, type, scene)                
-    
-    lines = file.readlines()
-    
-    for i, line in enumerate(lines):
-        if line in ['##Quality\n',
-                    '##ImageFolder\n'
-                    '##Motion Blur\n', 
-                    '##Export Objects\n', 
-                    '##Export Lights\n', 
-                    '##Animate Pass\n',
-                    '##ImageFolder\n']:
-            eval_preset(i, lines)
-            
-        elif line == '##World Shaders\n':
-            eval_preset(i, lines)
-            maintain_world_shaders(rpass, scene)
-            
-        elif line == '##Attributes\n':
-            eval_sub_preset(i, lines, "attr")
-            
-        elif line == '##Options\n':
-            eval_sub_preset(i, lines, "opt")
-        
-        elif line == '##Hider\n':
-            pi = i
-            pi += 1
-            hider = lines[pi].replace('\n', '')
-            rpass.hider = hider
-            while True:
-                pi += 1
-                hline = lines[pi]
-                if hline == '##\n': break
-                else:
-                    mhl = rm.hider_list
-                    load_sub_preset(rpass.hider_list[hider].options, mhl[hider].options, hline)
-            
-        elif line == '##Displays\n':
-            disp_name = ""
-            disp = None
-            disp_path = ""
-            co = False
-            pi = i
-            while True:
-                pi += 1
-                dline = lines[pi]
-                if dline == '##\n': break
-                else:               
-                    if dline.find('NewDisplay') != -1:
-                        disp_name = dline.split()[1]
-                        if not disp_name in rpass.displaydrivers:
-                            rpass.displaydrivers.add().name = disp_name
-                        disp = rpass.displaydrivers[disp_name]
-                        disp_path = pass_path + 'displaydrivers["'+disp_name+'"].'
-                        co = False
-                    elif dline == '#Custom Options\n': 
-                        co = True
-                    elif co:
-                        load_sub_preset(disp.custom_options,
-                                        rm.displays[disp.displaydriver].custom_parameter, dline)
-                    else:
-                        prop = pass_path + dline
-                        exec(prop)
-                        
-        elif line == '##Custom Scene RIB Code\n':
-            pi = i
-            while True:
-                pi += 1
-                pline = lines[pi]
-                if pline == '##\n': break
-                else:
-                    if not pline in rpass.scene_code:
-                        rpass.scene_code.add().name = pline
-                    
-        elif line == '##Custom World RIB Code\n':
-            pi = i
-            while True:
-                pi += 1
-                pline = lines[pi]
-                if pline == '##\n': break
-                else:
-                    if not pline in rpass.world_code:
-                        rpass.world_code.add().name = pline
-                    
-        elif line in ['##Imager\n', '##Surface\n', '##Atmosphere\n']:
-            eval_preset(i, lines)                  
-                    
-
-
+       
 class Renderman_OT_loadPresetPass(bpy.types.Operator):
     bl_label = "Load Pass Preset"
     bl_idname = "renderman.loadpresetpass"
@@ -1333,7 +1096,7 @@ class Renderman_OT_addPass(bpy.types.Operator):
         else:
             if len(passes) == 1:
                 bpy.ops.renderman.link_pass(path=self.path, rpass=rm.passes[0].name)
-        maintain_rib_structure(scene) 
+        maintain_rib_structure(self, context) 
         return{'FINISHED'}
 
 class Renderman_OT_movepass(bpy.types.Operator):
@@ -1778,7 +1541,81 @@ class Renderman_OT_set_attr_group_default(bpy.types.Operator):
                 copy_parameter(master_attribute, slave_attribute)                   
     
         return {'FINISHED'}  
+
+class RENDERMAN_OT_Attribute_Menu_OP(bpy.types.Operator):
+    bl_label = ""
+    bl_idname = "object.renderman_menu_attr_op"
+    bl_description = ""
+
+    path = bpy.props.StringProperty()
+    name = bpy.props.StringProperty()
+    selected = bpy.props.BoolProperty(default=False)
+
+    def draw(self, context):
+        obj = ""
+        part = ""
+        if self.name.find("object") != -1:
+            obj = context.object.name
+        elif self.name.find("particles") != -1:
+            obj = context.object.name
+            part = context.particle_system.name
+        layout = self.layout
+        layout.menu("attribute_"+self.name)
+        layout.menu(name+"_attributepresets", text="Presets")
+        if path != "":
+            op = layout.operator("attribute.add_preset", text="save preset")
+            op.obj = obj
+            op.part = part
+        if selected:
+            layout.operator("attributes.remove_all_selected")
+
+    def execute(self, context):
+        scene = context.scene
     
+        self.create_menus(scene.renderman_settings)
+        
+        wm = context.window_manager
+        return wm.invoke_popup(self)
+
+
+    def create_menus(self, rm):
+        ## Attributes 
+        def attrMenuDraw(self, context):
+            layout = self.layout
+            rman = context.scene.renderman_settings
+            if name.find("Options") != -1:
+                groups = rman.option_groups
+                sub = groups[self.grp_name].options
+            else:
+                groups = rman.attribute_groups
+                sub = groups[self.grp_name].attributes
+            
+            for attr in sub:
+                attrname = attr.name
+                if selected:
+                    op = layout.operator("attributes.add_new_selected", text=attrname)
+                else:
+                    op = layout.operator("attributes.add_new", text=attrname)
+                    op.path = path
+                op.grp = self.grp_name
+                op.attr = attrname
+        
+        mtype = bpy.types.Menu
+        if self.name.find("Options") != -1:
+            t = "option"
+            groups = rm.option_groups
+        else:
+            t = "attribute"
+            groups = rm.attribute_groups
+
+        for grp in groups:
+            mname = grp.name+"add"+t
+            cls = type(mtype)(mname, (mtype,), {  "bl_label" : grp.name, 
+                                            "grp_name" : grp.name, 
+                                            "draw" : attrMenuDraw,
+                                            "path" : self.path})
+            bpy.utils.register_class(cls)
+
 #############################################
 #                                           #
 #   Object Operators                        #

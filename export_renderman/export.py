@@ -99,20 +99,26 @@ class Archive():    # if specified open a new archive
                  filepath="",
                  scene=None,
                  type=""):
-        self.rib_code = []
+
+        self.rib_code = [] #cached rib code for this archive
         self.child_archives = []
         self.type = ""
+
         global base_archive, active_archive, direction, current_pass
+
+        #set this archive to the base archive if none is set
         if not base_archive: 
             base_archive = self
             if not data_path:
                 data_path = self.data_path = self.scene = scene
+
         self.type = type
         self.filepath = filepath
         self.data_path = data_path
         self.parent_archive = parent_archive
 
-        active_archive = self
+        active_archive = self #convenient way to access the current rib file
+
         name = ""
         parent_name = ""
         parent_type =""
@@ -122,6 +128,7 @@ class Archive():    # if specified open a new archive
             parent_type = self.parent_archive.type
         except:
             pass
+
         dbprint("active archive is", self.type, name, "parent:", parent_type, parent_name, lvl=2, grp="archive")
 
             
@@ -152,7 +159,6 @@ class Archive():    # if specified open a new archive
             type = self.type = data_path.rna_type.name
             
         self.rs = rs = types[type]
-        path = os.path.join(base_path, rs.folder)
         pname =""
         if type in ["Particle System", "Particle Data"]:
             prop_path = data_path.settings
@@ -183,9 +189,11 @@ class Archive():    # if specified open a new archive
                        pass_name=pname,
                        frame=framepadding(scene),
                        scene=scene) + '.rib'
-        filepath = os.path.join(path, name)
+
+        name = name.replace("[dir]", direction)
+        self.relative_filepath = os.path.join(rs.folder, name)
             
-        filepath = filepath.replace('[dir]', direction)
+        filepath = os.path.join(base_path, self.relative_filepath)
         
         if rs.own_file:
             self.filepath = filepath
@@ -193,12 +201,12 @@ class Archive():    # if specified open a new archive
                 if (type == "MESH"
                     and prop_path.export_type == 'DelayedReadArchive'):
                     bound_box = 'DelayedReadArchive "'
-                    bound_box += filepath.replace('\\', '\\\\')+ '" ['
+                    bound_box += self.relative_filepath.replace('\\', '\\\\')+ '" ['
                     for bound in obj.bound_box:
                         bound_box +=[" ".join(str(b)) for b in bound] + "]"
                     parent_archive.rib(bound_box)
                 else:
-                    parent_archive.rib('ReadArchive', '"' + filepath.replace('\\', '\\\\')+ '"')
+                    parent_archive.rib('ReadArchive', '"' + self.relative_filepath.replace('\\', '\\\\')+ '"')
                     
         if parent_archive != None:
             parent_archive.child_archives.append(self)
@@ -874,9 +882,7 @@ def writeWorld():
                 writeParticles(obj)
     
     ## custom code
-    print("kommst du hier an ?")
     write_custom_code(current_pass.world_code, "end_inside", type_="World")
-    print("und hier ??")
     rib_apnd("WorldEnd")
     write_custom_code(current_pass.world_code, "end_outside", type_="World")
 

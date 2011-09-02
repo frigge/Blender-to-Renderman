@@ -44,17 +44,15 @@ bl_info = {
     
 ##################################################################################################################################
 if "bpy" in locals():
-    reload(rm_props)
-    reload(ops)
-    reload(maintain)
-    reload(ui)
-    reload(export)
+    import imp
+    imp.reload(rm_props)
+    imp.reload(ops)
+    imp.reload(ui)
+    imp.reload(export)
 else:
+    import export_renderman.rm_props
     from export_renderman import rm_props
     from export_renderman import ops
-    from export_renderman.ops import *
-    from export_renderman import rm_maintain
-    from export_renderman.rm_maintain import *
     from export_renderman import ui
     from export_renderman import export
     from export_renderman.export import *
@@ -66,8 +64,6 @@ import math
 import mathutils
 import tempfile
 import time
-
-import threading
 
 ##################################################################################################################################
 
@@ -83,7 +79,7 @@ properties_render.RENDER_PT_dimensions.COMPAT_ENGINES.add('RENDERMAN')
 #properties_render.RENDER_PT_output.COMPAT_ENGINES.add('RENDERMAN')
 #properties_render.RENDER_PT_post_processing.COMPAT_ENGINES.add('RENDERMAN')
 properties_data_mesh.DATA_PT_context_mesh.COMPAT_ENGINES.add('RENDERMAN')
-properties_data_mesh.DATA_PT_settings.COMPAT_ENGINES.add('RENDERMAN')
+#properties_data_mesh.DATA_PT_settings.COMPAT_ENGINES.add('RENDERMAN')
 properties_data_mesh.DATA_PT_vertex_groups.COMPAT_ENGINES.add('RENDERMAN')
 properties_data_mesh.DATA_PT_shape_keys.COMPAT_ENGINES.add('RENDERMAN')
 properties_data_mesh.DATA_PT_uv_texture.COMPAT_ENGINES.add('RENDERMAN')
@@ -179,118 +175,6 @@ def rm_shellscript(cmd, rm):
     file.write(cmd+'\n')
     file.close()
 
-class Renderman_OT_Render(bpy.types.Operator):
-    bl_label = "Render"
-    bl_idname = "renderman.render"
-    bl_description = "Export/Render Scene using Renderman"
-    
-    anim = bpy.props.BoolProperty(default = False)
-    
-    def invoke(self, context, event):
-        scene = context.scene
-        path = getdefaultribpath(scene)        
-        checkpaths(path)
-        checkpaths(os.path.join(path, scene.renderman_settings.texdir))
-        if self.anim:
-            for i in range(context.frame_start, scene.frame_end+scene.frame_step, scene.frame_step):
-                scene.frame_set(i)
-                render(scene)
-        else:
-            render(scene)
-        return{'FINISHED'}   
-
-def image(name, scene): return name.replace("[frame]", framepadding(scene))
-
-def start_render(render, ribfile, current_pass, scene):
-    r = scene.render
-    x = int(r.resolution_x * r.resolution_percentage * 0.01)
-    y = int(r.resolution_y * r.resolution_percentage * 0.01)
-
-#    if current_pass.displaydrivers and not current_pass.shadow:
-#        print("Render .. "+current_pass.name)
-#        print(render + ' ' + ribfile)
-        
-        #renderprocess = subprocess.Popen([render, ribfile])                                         
-#        while not renderprocess.poll:
-#            if rhandle.test_break():
-#                try:
-#                    renderprocess.terminate()
-#                except:
-#                    renderprocess.kill()
-#    else:
-    renderprocess = subprocess.Popen([render, ribfile])      
-                 
-    #wait for the file to be completely written
-    for disp in current_pass.displaydrivers:
-        if not disp.displaydriver == "framebuffer":
-            img = image(disp.file, scene)
-            while not os.path.exists(img): ###wait for the file to be created
-                pass            
-            checksize(img)
-
-            
-    ## until the render api is fixed, load all images manually in the image editor
-    for disp in current_pass.displaydrivers:
-        if not disp.displaydriver == "framebuffer" or current_pass.shadow or current_pass.environment:
-            img = image(disp.file, scene)
-            if not img in bpy.data.images and not disp.displaydriver == "framebuffer":
-                bpy.data.images.load(img) 
-       
-def render(scene):
-    rndr = scene.renderman_settings.renderexec
-    rm = scene.renderman_settings
-    rs = rm.rib_structure    
-    if rndr != "":
-        maintain(eval("bpy.context"))
-        path = getdefaultribpath(scene)
-                                             
-        active_pass = getactivepass(scene)
-
-        global exported_instances
-        pname = getname(rs.frame.filename,
-                        scene=scene,
-                        frame=framepadding(scene))+'.rib'
-        
-        filepath = os.path.join(path, pname)
-                
-        if scene.renderman_settings.exportallpasses:
-            global base_archive
-            base_archive = Archive(data_path=scene, type="Frame", scene=scene, filepath=filepath)
-            for item in scene.renderman_settings.passes:
-                if item.export:
-                    imagefolder = os.path.join(getdefaultribpath(scene), item.imagedir)
-                    checkForPath(imagefolder)                                       
-
-                    exported_instances = []
-
-                    export(item, scene)
-            close_all()
-            rm = scene.renderman_settings
-            if not rm.exportonly:
-                if rndr != "" and not item.environment:
-                    start_render(rndr, base_archive.filepath, item, scene)
-                    check_disps_processing(item, scene)
-            else:
-                rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
-                rm_shellscript(rndr_cmd, rm)
-                    
-        else:
-
-            exported_instances = []
-
-
-            export(active_pass, scene)
-            close_all()
-            imagefolder = os.path.join(path, active_pass.imagedir)
-            checkpaths(imagefolder)
-            if not scene.renderman_settings.exportonly:
-               if rndr != "":
-                   start_render(rndr, base_archive.filepath, active_pass, scene)
-                   check_disps_processing(active_pass, scene)
-            else:
-                rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
-                rm_shellscript(rndr_cmd, rm)
-       
 update_counter = 0
 class RendermanRender(bpy.types.RenderEngine):
     bl_idname = 'RENDERMAN'
@@ -309,7 +193,7 @@ class RendermanRender(bpy.types.RenderEngine):
             print("Render .. "+current_pass.name)
             print(render + ' ' + ribfile)
             
-            renderprocess = subprocess.Popen([render, ribfile])
+            renderprocess = subprocess.Popen([render, ribfile], cwd=getdefaultribpath(scene))
            
             def image(name): return name.replace("[frame]", framepadding(scene))    
 
@@ -378,7 +262,11 @@ class RendermanRender(bpy.types.RenderEngine):
                     img = image(disp.file)
                     if not disp.displaydriver == "framebuffer":
                         if not img in bpy.data.images:
-                            bpy.data.images.load(image(img))
+                            try:
+                                imgpath = os.path.join(getdefaultribpath(scene), img)
+                                bpy.data.images.load(image(imgpath))
+                            except RuntimeError:
+                                print("can't load image", imgpath)
                         else: bpy.data.images[img].update()
             except SystemError:
                 pass
@@ -387,16 +275,21 @@ class RendermanRender(bpy.types.RenderEngine):
         abort = False
         for obj in scene.objects:
             if obj.type == "LAMP" and len(obj.data.renderman) == 0:
-                self.update_stats("", "Light: "+obj.name+" has no Render Pass, cancel Rendering ...")
+                printmsg = "Light: "+obj.name+" has no Render Pass, cancel Rendering ..."
+                self.update_stats("", printmsg)
+                print(printmsg)
                 abort = True
             elif obj.type == "MESH" and len(obj.renderman) == 0:
-                self.update_stats("", "Object: "+obj.name+"has nor Render Pass, cancel Rendering ...")
+                printmsg = "Object: "+obj.name+" has no Render Pass, cancel Rendering ..."
+                self.update_stats("", printmsg)
+                print(printmsg)
                 abort = True
         return abort
 
     def render(self, scene):
         rm = scene.renderman_settings
         rs = rm.rib_structure
+        print("Start Rendering ...")
         if scene.name == "preview":
             global update_counter
             update_counter += 1
@@ -407,6 +300,8 @@ class RendermanRender(bpy.types.RenderEngine):
             matrm = mat.renderman[mat.renderman_index]
 
             rmprdir = bpy.utils.preset_paths("renderman")[0]
+            if not bpy.utils.preset_paths("renderman")[0]:
+                return
             mat_preview_path = os.path.join(rmprdir, "material_previews")
             if matrm.preview_scene == "":
                 return
@@ -447,24 +342,24 @@ class RendermanRender(bpy.types.RenderEngine):
             
         else:
             if self.check_objects(scene):
+                print("1")
                 return
             rndr = scene.renderman_settings.renderexec
             if rndr == "":
+                print("2")
                 return
             
-            path = getdefaultribpath(scene)
-            pname = getname(rs.frame.filename,
+            projectFile = getname(rs.frame.filename,
                             scene=scene,
                             frame=framepadding(scene))+'.rib'
             
-            filepath = os.path.join(path, pname)
+            filepath = os.path.join(getdefaultribpath(scene), projectFile)
                     
-            rndr = scene.renderman_settings.renderexec
-
-                                                 
             active_pass = getactivepass(scene)
     
             global exported_instances, base_archive
+
+            print("Export RIB Archives to:", filepath)
             base_archive = Archive(data_path=scene, type="Frame", scene=scene, filepath=filepath)
     
             if scene.renderman_settings.exportallpasses:
@@ -474,10 +369,10 @@ class RendermanRender(bpy.types.RenderEngine):
                         checkForPath(imagefolder)
                         export(item, scene)
                 close_all()
+
                 if not scene.renderman_settings.exportonly:
-                    if rndr != "":
-                        self.rm_start_render(rndr, base_archive.filepath, item, scene)
-                        check_disps_processing(item, scene)
+                    self.rm_start_render(rndr, projectFile, item, scene)
+                    check_disps_processing(item, scene)
                 else:
                     rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
                     rm_shellscript(rndr_cmd, rm)
@@ -487,9 +382,8 @@ class RendermanRender(bpy.types.RenderEngine):
                 imagefolder = os.path.join(path, active_pass.imagedir)
                 checkpaths(imagefolder)
                 if not scene.renderman_settings.exportonly:
-                   if rndr != "":
-                       self.rm_start_render(rndr, base_archive.filepath, active_pass, scene)
-                       check_disps_processing(active_pass, scene)
+                   self.rm_start_render(rndr, projectFile, active_pass, scene)
+                   check_disps_processing(active_pass, scene)
                 else:
                     rndr_cmd = rndr + ' "'+base_archive.filepath+'"'
                     rm_shellscript(rndr_cmd, rm)
@@ -505,20 +399,23 @@ class RendermanRender(bpy.types.RenderEngine):
 
 
 ##################################################################################################################################
-maintainthread = None
 
 def register():
     rm_props.register()
     bpy.utils.register_module(__name__)
     bpy.types.VIEW3D_MT_object_specials.append(ui.draw_obj_specials_rm_menu)
     bpy.types.INFO_MT_add.append(ui.draw_rm_add_light)
-    #threaded_maintaining()
+    bpy.app.handlers.render_pre.append(maintain_render_passes)
+    bpy.app.handlers.render_pre.append(initPasses)
+    bpy.app.handlers.render_pre.append(maintain_client_passes_remove)
 
 def unregister():
     bpy.utils.unregister_module(__name__)
     bpy.types.VIEW3D_MT_object_specials.remove(ui.draw_obj_specials_rm_menu)
     bpy.types.INFO_MT_add.remove(ui.draw_rm_add_light)
-    #stop_maintaining()
+    bpy.app.handlers.render_pre.remove(maintain_render_passes)
+    bpy.app.handlers.render_pre.remove(initPasses)
+    bpy.app.handlers.render_pre.remove(maintain_client_passes_remove)
 
 if __name__ == "__main__":
     register()
