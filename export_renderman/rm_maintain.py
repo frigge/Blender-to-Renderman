@@ -1070,7 +1070,7 @@ def maintain_render_passes(scene):
     #scene = context.scene
     rm = scene.renderman_settings
     for rpass in rm.passes:
-        maintain_shutter_types(rpass, scene)
+        #maintain_shutter_types(rpass, scene)
         #maintain_world_shaders(rpass, scene)
         maintain_display_drivers(rpass, scene)
         maintain_output_images(rm, rpass)
@@ -1084,8 +1084,8 @@ def CB_m_render_passes(self, context):
     maintain_render_passes(context.scene)
     
 
-def maintain_shutter_types(rpass, scene):
-    fps = scene.render.fps
+def maintain_shutter_types(rpass, context):
+    fps = context.scene.render.fps
     ang = math.degrees(rpass.shutterspeed_ang)
     sec = rpass.shutterspeed_sec
     if rpass.shutter_type == "angle":

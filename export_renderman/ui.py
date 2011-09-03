@@ -178,7 +178,6 @@ class ShaderSelector():
                 
         def invoke_op2(self, context, event):
             set_shader(context, self.shader)
-            self.bl_label = self.shader
             return{'FINISHED'}
 
         def clear_shader_op(self, context, event):
@@ -199,7 +198,6 @@ class ShaderSelector():
                                                                 "bl_idname" : self.idname,
                                                                 "type_" : self.type_,
                                                                 "shader" : bpy.props.StringProperty(),
-                                                                #"shader_filter" : bpy.props.StringProperty(),
                                                                 "invoke" : invoke_op2})
         bpy.utils.register_class(cls)
 

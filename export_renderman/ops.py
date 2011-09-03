@@ -98,7 +98,7 @@ def clear_collections(scene):
     for t in dir(bpy.types):
         cl = getattr(bpy.types, t)
         if hasattr(cl, "mclient"):
-            bpy.types.unregister_class(cl)
+            bpy.utils.unregister_class(cl)
         
 class Renderman_OT_force_modal_restart(bpy.types.Operator):
     bl_idname = "renderman.restart"

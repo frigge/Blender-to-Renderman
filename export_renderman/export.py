@@ -73,26 +73,17 @@ def set_parent_active():
     global active_archive
     active_archive = active_archive.parent_archive
 
+def set_subframe(sub):
+    global active_archive
+    active_archive.sub_frame = sub
+
 
 class Archive():    # if specified open a new archive
                     # otherwise link to the parents file handle
     '''
-    Class to manage structure of RIB Archives.  The main export function
-    initializes the base archive with
-    Archive(scene = scene, current_pass = ..., filepath),
-    where filepath is the path specified in the export() function and
-    stores this Archive Object in the global variable base_archive.
-    On creation the archive object is also automatically stored in a global var
-    called active_archive.
-    All the other functions just call create_child(data_path) and get the
-    correct Archive Object except functions that are executed on several
-    archives, e.g. writeparms() just need to call get_write()
-    that will return the active archive.  If one wants to export a single
-    object call Archive(obj, scene = scene, current_pass = rpass) directly.
-    If one function's archive mustn't get children it can at the end call
-    set_parent_active() which will make the parent of the active archive the new
-    active archive.
+    Class to manage structure of RIB Archives.
     '''
+
     def __init__(self,
                  data_path=None,
                  parent_archive=None,
@@ -103,6 +94,7 @@ class Archive():    # if specified open a new archive
         self.rib_code = [] #cached rib code for this archive
         self.child_archives = []
         self.type = ""
+        self.sub_frame = 0.0
 
         global base_archive, active_archive, direction, current_pass
 
@@ -184,10 +176,15 @@ class Archive():    # if specified open a new archive
             objname = data_path.name
         except AttributeError:
             objname = ""
+
+        sub_frame_str = ""
+        if self.sub_frame != 0.0:
+            sub_frame_str = "_"+str(self.sub_frame).replace("0.", "")
+
         name = getname(rs.filename,
                        name=objname,
                        pass_name=pname,
-                       frame=framepadding(scene),
+                       frame=framepadding(scene)+sub_frame_str,
                        scene=scene) + '.rib'
 
         name = name.replace("[dir]", direction)
@@ -455,13 +452,14 @@ def get_mb_sampletime(samples, shutterspeed):
     return sampletime
 
 def mb_setframe(t):
-    global base_archive, current_pass
+    global base_archive, current_pass, active_archive
     scene = base_archive.scene
     fps = scene.render.fps
     speed = current_pass.shutterspeed_sec * fps
     start_frame = base_archive.frame
     frame = modf(start_frame - (speed - t))
     scene.frame_set(frame[1], frame[0])
+    return frame[0]
 
 def motionblur( path,
                 function,
@@ -1075,7 +1073,7 @@ def writeParticles(obj):
                 write_attrs_or_opts(linked_pass(obj, current_pass).attribute_groups, "Attribute", "")
                 
                 if current_pass.motionblur and rman.motion_blur:
-                    locations, sizes = mb_gather_point_locations(psystem)
+                    locations, sizes, sub_frames = mb_gather_point_locations(psystem)
                     shutterspeed = current_pass.shutterspeed_sec * scene.render.fps
                     sampletime = get_mb_sampletime(rman.motion_samples, shutterspeed)
                     mbstr = 'MotionBegin['
@@ -1083,8 +1081,11 @@ def writeParticles(obj):
                     mbstr += ']'
                     rib_apnd(mbstr)
                     for i, s in enumerate(sampletime):
-                        mb_setframe(s)
-                        writeParticle_data(psystem, locs = locations, sizes = sizes, sample = i)
+                        writeParticle_data(psystem, 
+                                            locs=locations, 
+                                            sizes=sizes, 
+                                            sub_frame=sub_frames[i], 
+                                            sample=i)
                     rib_apnd('MotionEnd')
                 else:
                     writeParticle_data(psystem)
@@ -1095,6 +1096,7 @@ def writeParticles(obj):
 def mb_gather_point_locations(psystem):
     locations = []
     sizes = []
+    sub_frames = []
     global active_archive, current_pass
     scene = active_archive.scene
     rman = linked_pass(psystem.settings, current_pass)
@@ -1105,24 +1107,24 @@ def mb_gather_point_locations(psystem):
     for s in sampletime:
         loc_sample = []
         siz_sample = []
-        mb_setframe(s)
+        sub_frames.append(mb_setframe(s))
         for part in psystem.particles:
             locx = str(part.location.x)
             locy = str(part.location.y)
             locz = str(part.location.z)
             loc_sample.append([locx, locy, locz])
-        locations.append(loc_sample)
-        
-        for i, part in enumerate(psystem.particles):
             size = str(part.size)
             siz_sample.append(size)
+        locations.append(loc_sample)
         sizes.append(siz_sample)
-    return locations, sizes
+        
+    return locations, sizes, sub_frames
 
-def writeParticle_data(psystem, locs = [], sizes = [], sample = -1):
+def writeParticle_data(psystem, locs = [], sizes = [], sub_frame=0.0, sample = -1):
     global active_archive, current_pass
     scene = active_archive.scene
     pdata_archive = Archive(psystem, type = "Particle Data", parent_archive = active_archive)
+    set_subframe(sub_frame)
     rman = linked_pass(psystem.settings, current_pass)
     if rman:
          ## custom code
@@ -1131,34 +1133,25 @@ def writeParticle_data(psystem, locs = [], sizes = [], sample = -1):
         if rman.render_type == "Points":
             rib_apnd('Points')
             rib_apnd('"P" [')
-            enum = psystem.particles
-            for i, part in enumerate(enum):    
-                if enum != psystem.particles:
+            if locs:
+                for i, loc in enumerate(locs[sample]):
                     if psystem.particles[i].alive_state == 'ALIVE':
-                        try:
-                            rib_apnd(*locs[sample][i])
-                        except IndexError:
-                            rib_apnd(*part.location)
-                elif part.alive_state == 'ALIVE':
-                    locx = part.location.x
-                    locy = part.location.y
-                    locz = part.location.z
-                                       
-                    rib_apnd(locx, locy, locz)
+                        rib_apnd(*loc)
+            else:
+                for part in psystem.particles:
+                    if part.alive_state == 'ALIVE':
+                        rib_apnd(*part.location)
             rib_apnd(']')
             
             rib_apnd('"width" [') 
-            enum = psystem.particles
-            for i, part in enumerate(enum):    
-                if enum != psystem.particles:
+            if sizes:
+                for i, size in enumerate(sizes[sample]):
                     if psystem.particles[i].alive_state == 'ALIVE':
-                        try:
-                            rib_apnd(*sizes[sample][i])
-                        except IndexError:
-                            rib_apnd(part.size)
-                elif part.alive_state == 'ALIVE':
-                    size = str(part.size)
-                    rib_apnd(size)
+                        rib_apnd(size)
+            else:
+                for part in psystem.particles:
+                    if part.alive_state == 'ALIVE':
+                        rib_apnd(part.size)
             rib_apnd(']')
             ## custom code
             write_custom_code(rman.custom_code, "end_data", type_="Particles")
