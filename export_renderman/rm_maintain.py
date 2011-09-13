@@ -129,7 +129,7 @@ def initPasses(scene):
     rmpasses = scene.renderman_settings.passes
     for obj in scene.objects:
         #obj passes
-        if obj.type == "MESH" and not obj.renderman:
+        if obj.type == "MESH":
             atleast_one_pass(obj, rmpasses)
             #material passes
             for mslot in obj.material_slots:
@@ -559,6 +559,7 @@ def maintain_beauty_pass(scene):
         
 def atleast_one_pass(path, rmpasses):
     if not path.renderman:
+        print(repr(path))
         path.renderman.add().name = "Default01"
     if len(path.renderman) == 1:
         for rpass in rmpasses:
