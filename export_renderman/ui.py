@@ -625,21 +625,26 @@ def attribute_menu(name, path="", selected=False): ### create the attribute Menu
     ##create menus
     ##attribute groups
     mname = t+"_"+name     
-    cls = type(mtype)(mname, (mtype,), {  "bl_label" : "New Attribute",
-                                    "draw" : draw_groups})
-    bpy.utils.register_class(cls)
+
+    if not mname in dir(bpy.types):
+        cls = type(mtype)(mname, (mtype,), {  "bl_label" : "New Attribute",
+                                        "draw" : draw_groups})
+
+        bpy.utils.register_class(cls)
     if name.find("Options") == -1:
         ##root menu
         mname = name+"_attribute_menu"
-        cls = type(mtype)(mname, (mtype,), {  "bl_label" : "",
-                                        "draw" : draw_root_menu})
-        bpy.utils.register_class(cls)
+        if not mname in dir(bpy.types):
+            cls = type(mtype)(mname, (mtype,), {  "bl_label" : "",
+                                                "draw" : draw_root_menu})
+            bpy.utils.register_class(cls)
     
         ## presets                                       
         mname = name+"_attributepresets"
-        cls = type(mtype)(mname, (mtype,), {  "bl_label" : "Presets",
-                                        "draw" : draw_menu})
-        bpy.utils.register_class(cls)
+        if not mname in dir(bpy.types):
+            cls = type(mtype)(mname, (mtype,), {  "bl_label" : "Presets",
+                                            "draw" : draw_menu})
+            bpy.utils.register_class(cls)
         
 
 def dimensions_layout(layout, obj, env=False):
