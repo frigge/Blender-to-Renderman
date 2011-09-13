@@ -48,7 +48,7 @@ if "bpy" in locals():
     imp.reload(rm_props)
     imp.reload(ops)
     imp.reload(ui)
-    imp.reload(export)
+    #imp.reload(export_renderman.export)
 else:
     import export_renderman.rm_props
     from export_renderman import rm_props
@@ -396,6 +396,15 @@ class RendermanRender(bpy.types.RenderEngine):
 ##################################################################################################################################
 
 
+def registerRenderCallbacks(sce=None):
+    bpy.app.handlers.render_pre.append(maintain_render_passes)
+    bpy.app.handlers.render_pre.append(initPasses)
+    bpy.app.handlers.render_pre.append(maintain_client_passes_remove)
+
+def removeRenderCallbacks(sce=None):
+    bpy.app.handlers.render_pre.remove(maintain_render_passes)
+    bpy.app.handlers.render_pre.remove(initPasses)
+    bpy.app.handlers.render_pre.remove(maintain_client_passes_remove)
 
 
 ##################################################################################################################################
@@ -405,17 +414,15 @@ def register():
     bpy.utils.register_module(__name__)
     bpy.types.VIEW3D_MT_object_specials.append(ui.draw_obj_specials_rm_menu)
     bpy.types.INFO_MT_add.append(ui.draw_rm_add_light)
-    bpy.app.handlers.render_pre.append(maintain_render_passes)
-    bpy.app.handlers.render_pre.append(initPasses)
-    bpy.app.handlers.render_pre.append(maintain_client_passes_remove)
+    registerRenderCallbacks()
+    bpy.app.handlers.load_post.append(registerRenderCallbacks)
 
 def unregister():
     bpy.utils.unregister_module(__name__)
     bpy.types.VIEW3D_MT_object_specials.remove(ui.draw_obj_specials_rm_menu)
     bpy.types.INFO_MT_add.remove(ui.draw_rm_add_light)
-    bpy.app.handlers.render_pre.remove(maintain_render_passes)
-    bpy.app.handlers.render_pre.remove(initPasses)
-    bpy.app.handlers.render_pre.remove(maintain_client_passes_remove)
+    removeRenderCallbacks()
+    bpy.app.handlers.load_post.remove(registerRenderCallbacks)
 
 if __name__ == "__main__":
     register()

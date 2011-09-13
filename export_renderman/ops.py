@@ -597,8 +597,22 @@ class Renderman_OT_adddisplayoption(bpy.types.Operator):
                 defcount +=1
                 defname = getdefname("Default", defcount)    
         display.custom_parameter.add().name = defname
+        maintain_render_passes(scene)
     
         return {'FINISHED'}          
+
+class Renderman_OT_refreshDisplayOption(bpy.types.Operator):
+    bl_label = "Refresh"
+    bl_idname = "displayoption.refresh"
+    bl_description = "refresh display options"
+
+    def invoke(self, context, event):
+        scene = context.scene
+        rm = scene.renderman_settings
+        for rpass in rm.passes:
+            maintain_display_options(rpass, rm)
+        return {'FINISHED'}
+         
         
 class Renderman_OT_removedisplayoption(bpy.types.Operator):
     bl_label = "remove option"
@@ -951,7 +965,7 @@ class Renderman_OT_delete_request(bpy.types.Operator):
             parm.textparameter = ""
 
             for rpass in context.scene.renderman_settings.passes:
-                maintain_client_passes_remove(rpass, context.scene)
+                maintain_client_passes_remove(context.scene)
         return {'FINISHED'}
 
 class Renderman_OT_requestPresetPass(bpy.types.Operator):

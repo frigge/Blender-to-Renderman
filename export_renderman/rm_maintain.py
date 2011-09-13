@@ -68,7 +68,7 @@ TEXTURE_FOLDERS = []
 RENDER = ""
 
 DEBUG_LEVEL = 2
-DEBUG_GROUP = ["textures"]
+DEBUG_GROUP = ["Archive"]
                 
 def restart():
     dbprint("restart modal operator")
@@ -144,8 +144,8 @@ def initPasses(scene):
         elif obj.type == "LAMP" and not obj.data.renderman:
             atleast_one_pass(obj.data, rmpasses)
             obj.data.renderman[0].shaderpath = "pointlight"
-            maintain_lamp_shaders(context.object, context.scene)
-            maintain_light(context.object, context.scene)
+            maintain_lamp_shaders(obj, scene)
+            maintain_light(obj, scene)
                     
 #########################################################################################################
 #                                                                                                       #
@@ -256,6 +256,11 @@ def getrendererdir(scene):
         renderdir = scene.renderman_settings.renderpath
     renderdir += "/bin/"
     return renderdir
+
+def CB_maintain_display_drivers(self, context):
+    scene = context.scene
+    for rpass in scene.renderman_settings.passes:
+        maintain_display_drivers(rpass, scene)
             
 def maintain_display_drivers(current_pass, scene):
     rmansettings = scene.renderman_settings
@@ -471,12 +476,11 @@ def copy_parameters(master_groups, slave_groups, options = True):
             
 def copy_parameter(master, slave):
     master.parametertype = slave.parametertype
-    master.textparameter = slave.textparameter
     master.input_type = slave.input_type
     master.use_var = slave.use_var
-    master.colorparameter = slave.colorparameter   
     master.vector_size = slave.vector_size
-    master.input_type = slave.input_type
+    master.textparameter = slave.textparameter
+    master.colorparameter = slave.colorparameter   
     master.int_one[0] = slave.int_one[0]
     master.int_two[0] = slave.int_two[0]
     master.int_two[1] = slave.int_two[1]
@@ -555,7 +559,7 @@ def maintain_beauty_pass(scene):
         
 def atleast_one_pass(path, rmpasses):
     if not path.renderman:
-        path.renderman.add().name = "Beauty"
+        path.renderman.add().name = "Default01"
     if len(path.renderman) == 1:
         for rpass in rmpasses:
             if not rpass.name in path.renderman[0].links:
@@ -582,6 +586,14 @@ def maintain_display_options(rpass, rm):
                     disp.custom_options.add().name = opt.name
                     copt = disp.custom_options[opt.name]
                     copy_parameter(copt, opt)
+                else:
+                    copt = disp.custom_options[opt.name]
+                    copt.parametertype = opt.parametertype
+                    copt.type = opt.parametertype
+                    copt.input_type = opt.input_type
+                    copt.use_var = opt.use_var
+                    copt.vector_size = opt.vector_size
+
             for i, copt in enumerate(disp.custom_options):
                 if copt.use_var:
                     copt.textparameter = disp.var
@@ -692,8 +704,6 @@ def linked_pass(p, rpass):
         if rpass.name in lp.links:
             lpass = lp
             
-    if lpass == None: #TODO: get rid of this 
-        print(repr(p))
     return lpass
         
 
@@ -982,6 +992,32 @@ def initial_load_data(scene):
     rm = scene.renderman_settings
     load_shaders(scene)
 
+def linkpass(rpass, scene):
+    rmpasses = scene.renderman_settings.passes
+    initPasses(scene)
+    for obj in scene.objects:
+        #obj passes
+        if obj.type == "MESH":
+            if linked_pass(obj, rpass) == None:
+                obj.renderman[0].links.add().name = rpass.name
+                
+            #material passes
+            for mslot in obj.material_slots:
+                if mslot.material:
+                    if linked_pass(mslot.material, rpass) == None:
+                        mslot.material.renderman[0].links.add().name = rpass.name
+
+            #particle passes
+            for psys in obj.particle_systems:
+                if linked_pass(psys.settings, rpass) == None:
+                    psys.settings.renderman[0].links.add().name = rpass.name
+
+        #light passes
+        elif obj.type == "LAMP":
+            if linked_pass(obj.data, rpass) == None:
+                obj.data.renderman[0].links.add().name = rpass.name
+
+
 def maintain_client_passes_add(obj, scene):
     rm = scene.renderman_settings
     for request_index, request in enumerate(obj.requests):
@@ -1003,12 +1039,12 @@ def maintain_client_passes_add(obj, scene):
                 dbprint(rpass_name, lvl=1, grp="rpass")
                 rm.passes.add().name = rpass_name
                 rpass = rm.passes[rpass_name]
-                maintain_hiders(rpass, scene)
-                maintain_searchpaths(rpass, scene)
                 rpass.client = obj.name
                 rpass.camera_object = obj.name
                 rpass.requested = True
                 invoke_preset(rpass, request.preset, scene)
+                linkpass(rpass, scene)
+                maintain_render_passes(scene)
                 
                 cl_pass_index = -1
                 render_pass_index = -1
@@ -1042,9 +1078,7 @@ def maintain_client_passes_add(obj, scene):
     
 def maintain_client_passes_remove(scene):
     rm = scene.renderman_settings
-    for rpass in rm.passes:
-        passlist = scene.renderman_settings.passes.keys()
-        i = passlist.index(rpass.name)
+    for i, rpass in enumerate(rm.passes):
         if rpass.requested:
             if rpass.client != "" and (not rpass.client in scene.objects):
                 dbprint("removing", rpass, "01", lvl=1, grp="requests")
@@ -1084,7 +1118,8 @@ def CB_m_render_passes(self, context):
     maintain_render_passes(context.scene)
     
 
-def maintain_shutter_types(rpass, context):
+def maintain_shutter_types(self, context):
+    rpass = context.scene.renderman_settings.passes[context.scene.renderman_settings.passes_index]
     fps = context.scene.render.fps
     ang = math.degrees(rpass.shutterspeed_ang)
     sec = rpass.shutterspeed_sec
@@ -1092,6 +1127,14 @@ def maintain_shutter_types(rpass, context):
         rpass.shutterspeed_sec = (ang/360) * (1/fps)
     else:
         rpass.shutterspeed_ang = math.radians(360 * fps * sec)
+
+def maintain_max_shutterspeed(self, context):
+    rpass = context.scene.renderman_settings.passes[context.scene.renderman_settings.passes_index]
+    fps = context.scene.render.fps
+    ang = math.degrees(rpass.shutterspeed_ang)
+    sec = rpass.shutterspeed_sec
+    if sec > 1/fps:
+        rpass.shutterspeed_sec = 1/fps
         
 def maintain_surface_color(mat):
     rm = mat.renderman[mat.renderman_index]

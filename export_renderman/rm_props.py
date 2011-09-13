@@ -214,7 +214,7 @@ class DisplayCollection(bpy.types.PropertyGroup):         #Display Drivers
     default_name = bpy.props.BoolProperty(default = True, 
                                             name = "Default", 
                                             description="Default Filename",
-                                            update=maintain_display_drivers)
+                                            update=CB_maintain_display_drivers)
     
     var = bpy.props.StringProperty(default="rgba")                               
                                 
@@ -647,6 +647,10 @@ class ParticlePasses(bpy.types.PropertyGroup):
                                                     ("Object", "Object", "Object"),
                                                     ("Group", "Group", "Group"),
                                                     ("Archive", "Archive", "Archive")))
+
+    size_factor = bpy.props.FloatProperty(min=0, max=10000, default=1, name="Size Multiplier", description="multiply size of particles")
+
+    constant_size = bpy.props.BoolProperty(default=False, name="Constand Width", description="Export size for each particle individually")
                                                     
     object = bpy.props.StringProperty(name = "Object", description ="Object to use for Rendering Particles")
 
@@ -831,6 +835,7 @@ class passes(bpy.types.PropertyGroup):            #passes
                                 precision = 4,
                                 default=0.01,
                                 unit = 'TIME',
+                                update=maintain_max_shutterspeed,
                                 description="Amount of time the shutter is open(in seconds)")
 
     shutterspeed_ang = bpy.props.FloatProperty(name="Shutter Speed",
@@ -839,6 +844,7 @@ class passes(bpy.types.PropertyGroup):            #passes
                                 precision = 4,
                                 default=180,
                                 unit = 'ROTATION',
+                                update=maintain_max_shutterspeed,
                                 description="Amount of time the shutter is open(in degrees)")   
 
     option_groups = bpy.props.CollectionProperty(type=AttributeOptionGroup,
@@ -1096,7 +1102,7 @@ def register():
 
     mesh = bpy.types.Mesh
 
-    mesh.export_normals = bpy.props.BoolProperty(name="Export Normals", default=True)
+    mesh.export_normals = bpy.props.BoolProperty(name="Export Normals", default=False)
 
     mesh.primitive_type = bpy.props.EnumProperty(   name = "PrimitiveType", 
                                                     default="pointspolygons", 

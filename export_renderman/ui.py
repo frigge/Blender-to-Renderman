@@ -1422,6 +1422,7 @@ class Render_PT_RendermanSettings(RenderButtonsPanel, bpy.types.Panel):
                 row = driver_box.row(align = True)
                 row.operator("displayoption.add", text="", icon='ZOOMIN').disp = dindex
                 row.prop(selected_disp, "name", text="")
+                row.operator("displayoption.refresh", text="", icon="FILE_REFRESH")
                 for di, opt in enumerate(selected_disp.custom_parameter):
                     row = driver_box.row(align=True)
                     row.prop(opt, "name", text="")
@@ -1886,7 +1887,7 @@ class RENDERMAN_PT_context_texture(TextureButtonsPanel, bpy.types.Panel):
 
         col = row.column()
 
-        col.prop(space, "show_brush_texture", text="Brush", toggle=True)
+        col.prop(space, "texture_context", text="", toggle=True)
 
         if tex:
             split = layout.split(percentage=0.2)
@@ -2664,6 +2665,9 @@ class Renderman_PT_Particle_Passes(bpy.types.Panel, ParticleButtonsPanel):
     
     def draw(self, context):
         obp = "bpy.context.particle_system"
+        if eval(obp) == None:
+            return
+
         passes_linking_layout("particle", obp+'.settings', self.layout, context.scene)     
 
 
@@ -2676,6 +2680,9 @@ class Renderman_PT_ParticleMBPanel(bpy.types.Panel, ParticleButtonsPanel):
         scene = context.scene
         layout = self.layout
         psystem = context.particle_system
+        if psystem == None:
+            return
+
         try:
             rman =psystem.settings.renderman[psystem.settings.renderman_index]
         
@@ -2700,6 +2707,9 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
         shaders = context.scene.renderman_settings.shaders
         
         psystem = context.particle_system
+        if psystem == None:
+            return
+
         obj = context.object
         if psystem.settings.renderman:
             rman = psystem.settings.renderman[psystem.settings.renderman_index]
@@ -2708,16 +2718,19 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
             
             row.prop(rman, "material_slot")
                 
-            layout.prop(rman, "render_type")
+            row.prop(rman, "render_type")
             if rman.render_type == "Object":
                 psystem.settings.render_type = 'OBJECT'
-                if rman.object in scene.objects:
-                    psystem.settings.dupli_object = scene.objects[rman.object]
-                layout.prop_search(rman, "object", scene, "objects")
-            elif rman.render_type == "Archive":
+                #if rman.object in scene.objects:
+                #    psystem.settings.dupli_object = scene.objects[rman.object]
+                #TODO: use callback layout.prop_search(rman, "object", scene, "objects") elif rman.render_type == "Archive":
                 layout.prop(rman, "archive")
             elif rman.render_type == "Group":
                 layout.prop_search(rman, "group", bpy.data, "groups")
+
+            row = layout.row()
+            row.prop(rman, "size_factor")
+            row.prop(rman, "constant_size")
 
 ### Attributes
 class Renderman_PT_particles_Attribute_Panel(bpy.types.Panel, ParticleButtonsPanel):
@@ -2728,6 +2741,9 @@ class Renderman_PT_particles_Attribute_Panel(bpy.types.Panel, ParticleButtonsPan
     def draw(self, context):
         path =  "bpy.context.particle_system.settings"
         rm = path+".renderman["+path+".renderman_index]"
+        if context.object == None:
+            return
+
         obj = context.object.name
         layout = self.layout
         scene = context.scene

@@ -45,6 +45,7 @@ import bpy
 from math import *
 
 exported_instances = []
+exported_files = [] 
 current_pass = base_archive = active_archive = None
 direction = ""
 
@@ -61,22 +62,26 @@ def create_child(data_path, type=""):
 
 
 def close_all():
-    global base_archive
+    global base_archive, exported_instances, exported_files
     def close(ar):
         ar.close()
         for ch in ar.child_archives:
             close(ch)
     close(base_archive)
-
+    base_archive = None
 
 def set_parent_active():
     global active_archive
+    dbprint("leaving file:", active_archive.filepath, grp="Archive", lvl=2)
     active_archive = active_archive.parent_archive
+    dbprint("now writing to file:", active_archive.filepath, grp="Archive", lvl=2)
 
-def set_subframe(sub):
-    global active_archive
-    active_archive.sub_frame = sub
+def check_skip_export():
+    global base_archive, exported_files, active_archive
+    if active_archive.relative_filepath in exported_files:
+        return True
 
+    return not active_archive.rs.overwrite
 
 class Archive():    # if specified open a new archive
                     # otherwise link to the parents file handle
@@ -89,12 +94,13 @@ class Archive():    # if specified open a new archive
                  parent_archive=None,
                  filepath="",
                  scene=None,
+                 custom_frame=False,
+                 frame=0.0,
                  type=""):
 
         self.rib_code = [] #cached rib code for this archive
         self.child_archives = []
         self.type = ""
-        self.sub_frame = 0.0
 
         global base_archive, active_archive, direction, current_pass
 
@@ -128,7 +134,11 @@ class Archive():    # if specified open a new archive
             scene = self.scene = base_archive.scene
         else:
             self.scene = scene
-        self.frame = scene.frame_current 
+
+        if custom_frame:
+            self.frame = frame
+        else:
+            self.frame = scene.frame_current
         
         rm = scene.renderman_settings
         
@@ -168,7 +178,6 @@ class Archive():    # if specified open a new archive
             dbprint("trying to get linked pass for this object", lvl=2, grp="archive")
             lp = linked_pass(prop_path, current_pass)
             if lp == None:
-                print("yo", prop_path.name, type)
                 return
             pname = lp.name
             dbprint("linked pass is", pname, lvl=2, grp="archive")
@@ -177,14 +186,15 @@ class Archive():    # if specified open a new archive
         except AttributeError:
             objname = ""
 
-        sub_frame_str = ""
-        if self.sub_frame != 0.0:
-            sub_frame_str = "_"+str(self.sub_frame).replace("0.", "")
+        if custom_frame:
+            frame_str = str(self.frame)
+        else:
+            frame_str = framepadding(scene)
 
         name = getname(rs.filename,
                        name=objname,
                        pass_name=pname,
-                       frame=framepadding(scene)+sub_frame_str,
+                       frame=frame_str,
                        scene=scene) + '.rib'
 
         name = name.replace("[dir]", direction)
@@ -194,6 +204,9 @@ class Archive():    # if specified open a new archive
         
         if rs.own_file:
             self.filepath = filepath
+            dbprint("new file:", filepath, grp="Archive", lvl=2)
+            if self != base_archive:
+                dbprint("parent file:", parent_archive.filepath, grp="Archive", lvl=2)
             if parent_archive != None:
                 if (type == "MESH"
                     and prop_path.export_type == 'DelayedReadArchive'):
@@ -221,13 +234,16 @@ class Archive():    # if specified open a new archive
             parent_archive.rib(*args)
         
     def close(self):
-        global base_archive
+        global base_archive, exported_files
         if not os.path.exists(os.path.split(self.filepath)[0]):
             os.mkdir(os.path.split(self.filepath)[0])
-        if self.rs.own_file and (self.rs.overwrite or not os.path.exists(self.filepath)):
+        if (self.rs.own_file 
+            and (self.rs.overwrite or not os.path.exists(self.filepath))
+            and not self.relative_filepath in exported_files):
             file = open(self.filepath, "w")
             file.writelines(self.rib_code)
             file.close()
+            exported_files.append(active_archive.relative_filepath)
         if self == base_archive: 
             # if it's the base archive reset the global var back to None
             # because exporting finished
@@ -266,7 +282,6 @@ def write_custom_code(code, position, type_=""):
                 cpos = c.particle_position
             else:
                 cpos = c.position
-            print(type_, cpos, position)
             if cpos == position:
                 if c.foreach or direction == "nz" or not env:
                     write_single_parm(c.parameter, name=c.name)
@@ -340,6 +355,8 @@ def writeshaderparameter(parameterlist):
     global current_pass, base_archive
     scene = base_archive.scene
     for i, parm in enumerate(parameterlist):
+        if not parm.export:
+            continue
         ribnl()
         name = '"'+parm.type+' '+parm.name+'"'
         if parm.parametertype == 'string':
@@ -457,9 +474,10 @@ def mb_setframe(t):
     fps = scene.render.fps
     speed = current_pass.shutterspeed_sec * fps
     start_frame = base_archive.frame
-    frame = modf(start_frame - (speed - t))
-    scene.frame_set(frame[1], frame[0])
-    return frame[0]
+    frame = start_frame - (speed - t)
+    mod_frame = modf(frame)
+    scene.frame_set(mod_frame[1], mod_frame[0])
+    return frame
 
 def motionblur( path,
                 function,
@@ -882,6 +900,7 @@ def writeWorld():
     ## custom code
     write_custom_code(current_pass.world_code, "end_inside", type_="World")
     rib_apnd("WorldEnd")
+    global active_archive
     write_custom_code(current_pass.world_code, "end_outside", type_="World")
 
 
@@ -976,16 +995,16 @@ def writeshader(shader, parms, type):
 
 def writeMaterial(mat, mat_archive=None, active_matpass=False):
     global active_archive
-    scene = active_archive.scene
-    p = active_archive
-    if mat_archive == None:
-        mat_archive = Archive(data_path=mat, parent_archive=p)
     if active_matpass:
         mat_pass=mat.renderman[mat.renderman_index]
     else:
         mat_pass = linked_pass(mat, current_pass)
     if mat_pass == None:
         return
+    scene = active_archive.scene
+    p = active_archive
+    if mat_archive == None:
+        mat_archive = Archive(data_path=mat, parent_archive=p)
     rmansettings = scene.renderman_settings
     
     if mat_pass.matte:
@@ -1057,6 +1076,9 @@ def writeParticles(obj):
         for psystem in obj.particle_systems:
             if psystem.settings.type == 'EMITTER':
                 rman = linked_pass(psystem.settings, current_pass)
+                if not rman:
+                    return
+
                 particle_archive = create_child(psystem)
                 ribnl()
                 rib_apnd("AttributeBegin ##Particle System")
@@ -1070,10 +1092,10 @@ def writeParticles(obj):
                 except IndexError:
                     mat = None
                 if mat: writeMaterial(mat.material)
-                write_attrs_or_opts(linked_pass(obj, current_pass).attribute_groups, "Attribute", "")
+                write_attrs_or_opts(linked_pass(psystem.settings, current_pass).attribute_groups, "Attribute", "")
                 
                 if current_pass.motionblur and rman.motion_blur:
-                    locations, sizes, sub_frames = mb_gather_point_locations(psystem)
+                    locations, sizes, frames = mb_gather_point_locations(psystem)
                     shutterspeed = current_pass.shutterspeed_sec * scene.render.fps
                     sampletime = get_mb_sampletime(rman.motion_samples, shutterspeed)
                     mbstr = 'MotionBegin['
@@ -1084,7 +1106,7 @@ def writeParticles(obj):
                         writeParticle_data(psystem, 
                                             locs=locations, 
                                             sizes=sizes, 
-                                            sub_frame=sub_frames[i], 
+                                            frames=frames,
                                             sample=i)
                     rib_apnd('MotionEnd')
                 else:
@@ -1092,11 +1114,12 @@ def writeParticles(obj):
                  ## custom code
                 write_custom_code(rman.custom_code, "end", type_="Particles")
                 rib_apnd('AttributeEnd')
+                set_parent_active()
                 
 def mb_gather_point_locations(psystem):
     locations = []
     sizes = []
-    sub_frames = []
+    frames = []
     global active_archive, current_pass
     scene = active_archive.scene
     rman = linked_pass(psystem.settings, current_pass)
@@ -1107,26 +1130,46 @@ def mb_gather_point_locations(psystem):
     for s in sampletime:
         loc_sample = []
         siz_sample = []
-        sub_frames.append(mb_setframe(s))
+        start_frame = base_archive.frame
+        frame = start_frame - (shutterspeed - s)
+        frames.append(frame)
         for part in psystem.particles:
-            locx = str(part.location.x)
-            locy = str(part.location.y)
-            locz = str(part.location.z)
-            loc_sample.append([locx, locy, locz])
-            size = str(part.size)
-            siz_sample.append(size)
+            loc_sample.append(compute_particle_location(part, s))
+            if rman.per_particle_size:
+                size = str(part.size * rman.size_factor)
+                siz_sample.append(size)
         locations.append(loc_sample)
         sizes.append(siz_sample)
         
-    return locations, sizes, sub_frames
+    return locations, sizes, frames
 
-def writeParticle_data(psystem, locs = [], sizes = [], sub_frame=0.0, sample = -1):
+def compute_particle_location(part, sampletime):
+    deltaloc = part.prev_location - part.location 
+    mb_sample_loc =   part.location + deltaloc * (1 - sampletime)
+    return [str(mb_sample_loc.x), str(mb_sample_loc.y), str(mb_sample_loc.z)]
+    
+
+def writeParticle_data(psystem, locs = [], sizes = [], frames=[], sample = -1):
     global active_archive, current_pass
     scene = active_archive.scene
-    pdata_archive = Archive(psystem, type = "Particle Data", parent_archive = active_archive)
-    set_subframe(sub_frame)
+    shutterspeed = current_pass.shutterspeed_sec * scene.render.fps
+    try:
+        frame = frames[sample]
+        customfr = True
+    except IndexError:
+        frame = 0.0
+        customfr = False
     rman = linked_pass(psystem.settings, current_pass)
     if rman:
+        pdata_archive = Archive(psystem, 
+                                type="Particle Data", 
+                                parent_archive=active_archive, 
+                                custom_frame=customfr,
+                                frame=frame)
+        if check_skip_export():
+            set_parent_active()
+            return
+
          ## custom code
         write_custom_code(rman.custom_code, "begin_data", type_="Particles")
         ## Points
@@ -1143,16 +1186,19 @@ def writeParticle_data(psystem, locs = [], sizes = [], sub_frame=0.0, sample = -
                         rib_apnd(*part.location)
             rib_apnd(']')
             
-            rib_apnd('"width" [') 
-            if sizes:
-                for i, size in enumerate(sizes[sample]):
-                    if psystem.particles[i].alive_state == 'ALIVE':
-                        rib_apnd(size)
+            if not rman.constant_size:
+                rib_apnd('"width" [') 
+                if sizes:
+                    for i, size in enumerate(sizes[sample]):
+                        if psystem.particles[i].alive_state == 'ALIVE':
+                            rib_apnd(size)
+                else:
+                    for part in psystem.particles:
+                        if part.alive_state == 'ALIVE':
+                            rib_apnd(part.size)
+                rib_apnd(']')
             else:
-                for part in psystem.particles:
-                    if part.alive_state == 'ALIVE':
-                        rib_apnd(part.size)
-            rib_apnd(']')
+                rib_apnd('"constantwidth" [', rman.size_factor, ']')
             ## custom code
             write_custom_code(rman.custom_code, "end_data", type_="Particles")
         ## Objects
@@ -1196,7 +1242,7 @@ def writeParticle_data(psystem, locs = [], sizes = [], sub_frame=0.0, sample = -
             #~ 
                 #~ write('AttributeEnd\n')
         
-    set_parent_active()
+        set_parent_active()
                                 
 
 #############################################
