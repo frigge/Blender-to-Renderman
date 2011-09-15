@@ -68,7 +68,7 @@ TEXTURE_FOLDERS = []
 RENDER = ""
 
 DEBUG_LEVEL = 2
-DEBUG_GROUP = ["Archive"]
+DEBUG_GROUP = ["textures"]
                 
 def restart():
     dbprint("restart modal operator")
@@ -1101,9 +1101,18 @@ def maintain_client_passes_remove(scene):
                     scene.renderman_settings.passes.remove(i)
                     dbprint("removing", rpass, "03", lvl=1, grp="requests")
 
+def maintain_textures(scene):
+    for tex in bpy.data.textures:
+        if tex.renderman.type == "file":
+            image = tex.image
+            if image.source == 'GENERATED':
+                image.filepath = os.path.join(getdefaultribpath(scene), image.name)
+                image.save()
+
 def maintain_render_passes(scene):
     #scene = context.scene
     rm = scene.renderman_settings
+    maintain_textures(scene)
     for rpass in rm.passes:
         #maintain_shutter_types(rpass, scene)
         #maintain_world_shaders(rpass, scene)
@@ -1141,10 +1150,11 @@ def maintain_surface_color(mat):
     rm = mat.renderman[mat.renderman_index]
     mat.diffuse_color = rm.color
     
-def maintain_texture_type(tex):
-    types_dict = {"file" : "IMAGE", "none" : "NONE", "bake" : "NONE"}
-    if hasattr(tex, "renderman"):
-        tex.type = types_dict[tex.renderman.type]
+def maintain_texture_type(context, scene):
+    for tex in bpy.data.textures:
+        types_dict = {"file" : "IMAGE", "none" : "NONE", "bake" : "NONE"}
+        if hasattr(tex, "renderman"):
+            tex.type = types_dict[tex.renderman.type]
         
 def maintain(scene):
     if scene.render.engine == 'RENDERMAN':
@@ -1184,6 +1194,7 @@ def maintain(scene):
 
 
 def checkextension(file):
+    if file.find(".") == -1: return file
     file_array = file.split(".")
     file_array_len = len(file_array)
     file_extension = file_array[file_array_len-1]

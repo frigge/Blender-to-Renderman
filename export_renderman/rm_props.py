@@ -155,7 +155,7 @@ class Collection(bpy.types.PropertyGroup):            #All Variable Properties: 
 class ImageProcessing(bpy.types.PropertyGroup):
     
     process = bpy.props.BoolProperty(    name="Process",
-                                        default=False,
+                                        default=True,
                                         description="run Texture processing tool to convert into rendermans intern texture format")
                                         
     overwrite = bpy.props.BoolProperty(name="Overwrite", description="Overwrite existing", default=False)
@@ -623,7 +623,10 @@ class Hider(bpy.types.PropertyGroup):
     options = bpy.props.CollectionProperty(type=Collection)
 
 class RendermanTexture(bpy.types.PropertyGroup):
-    type = bpy.props.EnumProperty(name="Type", default="none", items=(
+    type = bpy.props.EnumProperty(name="Type", 
+                                    default="none", 
+                                    update=maintain_texture_type,
+                                    items=(
                                                                     ("none", "None", ""),
                                                                     ("file", "Image File", ""),
                                                                     ("bake", "Bake File", "")))

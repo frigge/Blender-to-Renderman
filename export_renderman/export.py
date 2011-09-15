@@ -205,8 +205,6 @@ class Archive():    # if specified open a new archive
         if rs.own_file:
             self.filepath = filepath
             dbprint("new file:", filepath, grp="Archive", lvl=2)
-            if self != base_archive:
-                dbprint("parent file:", parent_archive.filepath, grp="Archive", lvl=2)
             if parent_archive != None:
                 if (type == "MESH"
                     and prop_path.export_type == 'DelayedReadArchive'):
@@ -366,9 +364,6 @@ def writeshaderparameter(parameterlist):
                     texture = bpy.data.textures[parm.textparameter]
                     if texture.renderman.type == "file":
                         image = texture.image
-                        if image.source == 'GENERATED':
-                            image.filepath = os.path.join(getdefaultribpath(scene), image.name)
-                            image.save()
                         tx = image_processing(texture.renderman.processing, image.filepath, tex=True)
                     elif texture.renderman.type == "bake":
                         tx = os.path.join(getdefaultribpath(scene), texture.name+framepadding(scene)+".bake").replace('\\', '\\\\')
@@ -404,61 +399,67 @@ def prepared_texture_file(file):
 def image_processing(pr, input, scene=None, env=-1, tex=False):
     envdirections = ["px", "nx", "py", "ny", "pz", "nz"]
     global base_archive
-    if pr.process:
-        if base_archive != None:
-            scene = base_archive.scene
-        rm = scene.renderman_settings
-        tx = rm.textureext
-        txdir = os.path.join(getdefaultribpath(scene), rm.texdir)
-        output = getname(input,
-                         frame=framepadding(scene),
-                         scene=scene)
-        if tex:
-            output = os.path.join(txdir, os.path.split(output)[1])
-            if not os.path.exists(txdir): os.mkdir(txdir)
-        parmsarray = []
-        if pr.shadow:
-            shadow = "-shadow"
-            parmsarray.append(shadow)
-            ext = 'shd'
+    if not pr.process:
+        return ""
+    if base_archive != None:
+        scene = base_archive.scene
+    rm = scene.renderman_settings
+    tx = rm.textureext
+    txdir = rm.texdir
+    output = getname(input,
+                     frame=framepadding(scene),
+                     scene=scene)
+    
+    output = os.path.join(txdir, output)
+    if not os.path.exists(txdir): os.mkdir(txdir)
+    parmsarray = []
+    textool = scene.renderman_settings.textureexec
+    parmsarray.append(textool)
+    if pr.shadow:
+        parmsarray.append("-shadow")
+        ext = 'shd'
+    else:
+        if pr.envcube and env == 5:
+            parmsarray.append("-envcube")
+        ext = tx
+    
+        parmsarray.append("-filter")
+        if pr.filter == "other":
+            filter = pr.custom_filter
         else:
-            if pr.envcube and env == 5:
-                envcube = "-envcube"
-                parmsarray.append(envcube)
-            ext = tx
-        
-            if pr.filter == "other":
-                filter = "-filter "+pr.custom_filter
-            else:
-                filter = "-filter "+pr.filter
-            parmsarray.append(filter)
-            if pr.stwidth:
-                width = "-sfilterwidth " + str(pr.swidth)
-                width += "-tfilterwidth " + str(pr.twidth)
-            else:
-                width = "-filterwidth " + str(pr.width)
-            parmsarray.append(width)
+            filter = pr.filter
+        parmsarray.append(filter)
+        if pr.stwidth:
+            parmsarray.append("-sfilterwidth")
+            parmsarray.append(str(pr.swidth))
+            parmsarray.append("-tfilterwidth")
+            parmsarray.append(str(pr.twidth))
+        else:
+            parmsarray.append("-filterwidth")
+            parmsarray.append(str(pr.width))
+        if pr.custom_parameter != "":
             parmsarray.append(pr.custom_parameter)
-        
-        inp = '"'+input.replace('[frame]', framepadding(scene))+'"'
-        if env == 5:
-            inputs = []
-            for dir in envdirections:
-                inputs.append(inp.replace('[dir]', dir))
-            inp = ' '.join(inputs)
-        output = output.replace(checkextension(output), ext)
-        output = output.replace('[dir]', '')
+    
+    inp = input.replace('[frame]', framepadding(scene))
+    if env == 5:
+        inputs = []
+        for dir in envdirections:
+            inputs.append(inp.replace('[dir]', dir))
+        parmsarray.append(inputs)
+    else:
         parmsarray.append(inp)
-        parmsarray.append('"'+output+'"')
-        
-        parms = " ".join(parmsarray)
-        
-        textool = scene.renderman_settings.textureexec
-        command = textool+ ' ' +parms
-        dbprint(command, lvl=2, grp="textures")
-        if not os.path.exists(output):
-            os.system(command)
-        return output
+    output += "."+ext
+    output = output.replace('[dir]', '')
+    parmsarray.append(output)
+    
+    parms = " ".join(parmsarray)
+    
+    command = textool+ ' ' +parms
+    dbprint(parmsarray, lvl=2, grp="textures")
+    if not os.path.exists(output):
+        texprocess = subprocess.Popen(parmsarray, cwd=getdefaultribpath(scene))
+        texprocess.wait()
+    return output
 
 def get_mb_sampletime(samples, shutterspeed):
     global current_pass
@@ -534,6 +535,7 @@ def writeSettings(camrot):
         camobj = scene.camera.name
     else:
         camobj = current_pass.camera_object
+    #print(scene.objects)
     camera = scene.objects[camobj]
     rc = camera.renderman_camera
     if camera.type == "CAMERA":
@@ -1135,7 +1137,7 @@ def mb_gather_point_locations(psystem):
         frames.append(frame)
         for part in psystem.particles:
             loc_sample.append(compute_particle_location(part, s))
-            if rman.per_particle_size:
+            if rman.constant_size:
                 size = str(part.size * rman.size_factor)
                 siz_sample.append(size)
         locations.append(loc_sample)

@@ -400,11 +400,13 @@ def registerRenderCallbacks(sce=None):
     bpy.app.handlers.render_pre.append(maintain_render_passes)
     bpy.app.handlers.render_pre.append(initPasses)
     bpy.app.handlers.render_pre.append(maintain_client_passes_remove)
+    bpy.app.handlers.render_pre.append(maintain_textures)
 
 def removeRenderCallbacks(sce=None):
     bpy.app.handlers.render_pre.remove(maintain_render_passes)
     bpy.app.handlers.render_pre.remove(initPasses)
     bpy.app.handlers.render_pre.remove(maintain_client_passes_remove)
+    bpy.app.handlers.render_pre.remove(maintain_textures)
 
 
 ##################################################################################################################################
