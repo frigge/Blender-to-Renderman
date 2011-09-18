@@ -2250,5 +2250,30 @@ class Renderman_OT_addCustomRIBCode(bpy.types.Operator):
         else:
             code.remove(i)        
         return {'FINISHED'}  
-        
-        
+
+
+class Renderman_OT_AddParticleAttribute(bpy.types.Operator):
+    bl_label="Add Attribute"
+    bl_idname="renderman.add_particle_var"
+    bl_description="Add a new Particle Variable"
+
+    def invoke(self, context, event):
+        ps = context.particle_system
+        rm = ps.settings.renderman[ps.settings.renderman_index]
+
+        rm.export_vars.add()
+        return {'FINISHED'}
+         
+class Renderman_OT_RemoveParticleAttribute(bpy.types.Operator):
+    bl_label=""
+    bl_idname="renderman.remove_particle_var"
+    bl_description="Remove Particle Variable"
+
+    index = bpy.props.IntProperty(min=0, max=100, default=0)
+
+    def invoke(self, context, event):
+        ps = context.particle_system
+        rm = ps.settings.renderman[ps.settings.renderman_index]
+
+        rm.export_vars.remove(self.index)
+        return {'FINISHED'}

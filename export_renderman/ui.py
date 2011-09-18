@@ -356,11 +356,11 @@ def attribute_panel_layout(name, str_path, layout, scene):
             row.prop(group, "expand", text="", icon="TRIA_DOWN" if group.expand else "TRIA_RIGHT", emboss=False)
             row.label(text=group.name)
             box.active = group.export
-            if not group.name in grp_menus:
-                mname = attribute_options(name, str_path, "", group.name)
-                grp_menus[group.name] = mname
-            else:
-                mname = grp_menus[group.name]
+            #if not group.name in grp_menus:
+            mname = attribute_options(name, str_path, "", group.name)
+            grp_menus[group.name] = mname
+            #else:
+            #    mname = grp_menus[group.name]
             row.menu(mname, icon="DOWNARROW_HLT")
             
             if group.expand:
@@ -2736,6 +2736,14 @@ class Renderman_PT_ParticleRenderSettings(bpy.types.Panel, ParticleButtonsPanel)
             row = layout.row()
             row.prop(rman, "size_factor")
             row.prop(rman, "constant_size")
+
+            layout.operator("renderman.add_particle_var")
+
+            for i, var in enumerate(rman.export_vars):
+                row = layout.row()
+                row.prop(var, "name")
+                row.prop(var, "path")
+                row.operator("renderman.remove_particle_var").index = i
 
 ### Attributes
 class Renderman_PT_particles_Attribute_Panel(bpy.types.Panel, ParticleButtonsPanel):

@@ -1201,6 +1201,15 @@ def writeParticle_data(psystem, locs = [], sizes = [], frames=[], sample = -1):
                 rib_apnd(']')
             else:
                 rib_apnd('"constantwidth" [', rman.size_factor, ']')
+
+            ## custom variables
+            if rman.export_vars:
+                for var in rman.export_vars:
+                    rib_apnd('"'+var.name+'" [')
+                    for part in psystem.particles:
+                        rib_apnd(eval("part."+var.path))
+                    rib_apnd(']')
+
             ## custom code
             write_custom_code(rman.custom_code, "end_data", type_="Particles")
         ## Objects

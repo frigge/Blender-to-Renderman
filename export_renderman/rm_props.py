@@ -633,6 +633,9 @@ class RendermanTexture(bpy.types.PropertyGroup):
 
     processing = bpy.props.PointerProperty(type = ImageProcessing)                                                       
 
+class ParticleExportVars(bpy.types.PropertyGroup):
+    path = bpy.props.StringProperty(name="Path", description="relative python path to particle attribute")
+
 class ParticlePasses(bpy.types.PropertyGroup):
     custom_code = bpy.props.CollectionProperty(type = CustomCodeCollection)
 
@@ -668,6 +671,8 @@ class ParticlePasses(bpy.types.PropertyGroup):
                                                          min = -1,
                                                          max = 100,
                                                          default = 1)
+
+    export_vars = bpy.props.CollectionProperty(type=ParticleExportVars)
 
 class RibStructure(bpy.types.PropertyGroup):
     ### Rib Structure Settings
@@ -1076,6 +1081,7 @@ classes = [Collection,
             DisplayDrivers,
             Hider,
             RendermanTexture,
+            ParticleExportVars,
             ParticlePasses,
             RibStructure,
             RibStructureBase,
